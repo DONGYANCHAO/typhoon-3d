@@ -1,0 +1,1704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>3D 台风路径模拟器 - 增强版</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            background: radial-gradient(ellipse at bottom, #0a0e1a 0%, #000000 100%);
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        .ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 14px;
+            min-width: 250px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        .ui-overlay h3 {
+            margin: 0 0 15px 0;
+            color: #4a9eff;
+            font-size: 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 10px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+        .control-group label:hover {
+            color: #4a9eff;
+        }
+        .control-group input[type="checkbox"] {
+            margin-right: 10px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .control-group input[type="range"] {
+            width: 100%;
+            margin-top: 5px;
+        }
+        .info-text {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 10px;
+            line-height: 1.5;
+        }
+        .lightning-flash {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 1000;
+            transition: opacity 0.1s ease-out;
+        }
+        .stats {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 12px;
+            font-size: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div id="lightningFlash" class="lightning-flash"></div>
+    <div id="ui" class="ui-overlay">
+        <h3>🌀 台风模拟控制面板</h3>
+        <div class="control-group">
+            <label>
+                <input type="checkbox" id="rainToggle" checked>
+                <span>启用降雨效果</span>
+            </label>
+        </div>
+        <div class="control-group">
+            <label>
+                <input type="checkbox" id="lightningToggle" checked>
+                <span>启用闪电效果</span>
+            </label>
+        </div>
+        <div class="control-group">
+            <label>
+                <input type="checkbox" id="autoRotateToggle" checked>
+                <span>地球自转</span>
+            </label>
+        </div>
+        <div class="control-group">
+            <label>风力强度: <span id="windValue">3</span></label>
+            <input type="range" id="windSlider" min="1" max="5" value="3">
+        </div>
+        <div class="info-text">
+            🖱️ 左键拖动旋转<br>
+            🖱️ 滚轮缩放<br>
+            🖱️ 右键平移
+        </div>
+    </div>
+    <div class="stats">
+        <div>粒子数量: <span id="particleCount">0</span></div>
+        <div>FPS: <span id="fps">0</span></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+    // OrbitControls 内联实现
+    (function() {
+        const _changeEvent = { type: 'change' };
+        const _startEvent = { type: 'start' };
+        const _endEvent = { type: 'end' };
+
+        class OrbitControls extends THREE.EventDispatcher {
+            constructor(object, domElement) {
+                super();
+                this.object = object;
+                this.domElement = domElement;
+                this.enabled = true;
+                this.target = new THREE.Vector3();
+                this.minDistance = 0;
+                this.maxDistance = Infinity;
+                this.minZoom = 0;
+                this.maxZoom = Infinity;
+                this.minPolarAngle = 0;
+                this.maxPolarAngle = Math.PI;
+                this.minAzimuthAngle = -Infinity;
+                this.maxAzimuthAngle = Infinity;
+                this.enableDamping = false;
+                this.dampingFactor = 0.05;
+                this.enableZoom = true;
+                this.zoomSpeed = 1.0;
+                this.enableRotate = true;
+                this.rotateSpeed = 1.0;
+                this.enablePan = true;
+                this.panSpeed = 1.0;
+                this.screenSpacePanning = true;
+                this.keyPanSpeed = 7.0;
+                this.autoRotate = false;
+                this.autoRotateSpeed = 2.0;
+                this.keys = { LEFT: 'ArrowLeft', UP: 'ArrowUp', RIGHT: 'ArrowRight', BOTTOM: 'ArrowDown' };
+                this.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+                this.touches = { ONE: THREE.MOUSE.ROTATE, TWO: THREE.MOUSE.DOLLY_PAN };
+                this.target0 = this.target.clone();
+                this.position0 = this.object.position.clone();
+                this.zoom0 = this.object.zoom;
+                this._domElementKeyEvents = null;
+
+                const scope = this;
+                const STATE = { NONE: -1, ROTATE: 0, DOLLY: 1, PAN: 2, TOUCH_ROTATE: 3, TOUCH_PAN: 4, TOUCH_DOLLY_PAN: 5, TOUCH_DOLLY_ROTATE: 6 };
+                let state = STATE.NONE;
+                const EPS = 0.000001;
+                const spherical = new THREE.Spherical();
+                const sphericalDelta = new THREE.Spherical();
+                let scale = 1;
+                const panOffset = new THREE.Vector3();
+                let zoomChanged = false;
+                const rotateStart = new THREE.Vector2();
+                const rotateEnd = new THREE.Vector2();
+                const rotateDelta = new THREE.Vector2();
+                const panStart = new THREE.Vector2();
+                const panEnd = new THREE.Vector2();
+                const panDelta = new THREE.Vector2();
+                const dollyStart = new THREE.Vector2();
+                const dollyEnd = new THREE.Vector2();
+                const dollyDelta = new THREE.Vector2();
+
+                this.getPolarAngle = function() { return spherical.phi; };
+                this.getAzimuthalAngle = function() { return spherical.theta; };
+                this.listenToKeyEvents = function(domElement) {
+                    domElement.addEventListener('keydown', onKeyDown);
+                    this._domElementKeyEvents = domElement;
+                };
+                this.saveState = function() {
+                    scope.target0.copy(scope.target);
+                    scope.position0.copy(scope.object.position);
+                    scope.zoom0 = scope.object.zoom;
+                };
+                this.reset = function() {
+                    scope.target.copy(scope.target0);
+                    scope.object.position.copy(scope.position0);
+                    scope.object.zoom = scope.zoom0;
+                    scope.object.updateProjectionMatrix();
+                    scope.dispatchEvent(_changeEvent);
+                    scope.update();
+                    state = STATE.NONE;
+                };
+                this.update = function() {
+                    const offset = new THREE.Vector3();
+                    const quat = new THREE.Quaternion().setFromUnitVectors(object.up, new THREE.Vector3(0, 1, 0));
+                    const quatInverse = quat.clone().invert();
+                    const lastPosition = new THREE.Vector3();
+                    const lastQuaternion = new THREE.Quaternion();
+                    const twoPI = 2 * Math.PI;
+                    return function update() {
+                        const position = scope.object.position;
+                        offset.copy(position).sub(scope.target);
+                        offset.applyQuaternion(quat);
+                        spherical.setFromVector3(offset);
+                        if (scope.autoRotate && state === STATE.NONE) {
+                            rotateLeft(getAutoRotationAngle());
+                        }
+                        if (scope.enableDamping) {
+                            spherical.theta += sphericalDelta.theta * scope.dampingFactor;
+                            spherical.phi += sphericalDelta.phi * scope.dampingFactor;
+                        } else {
+                            spherical.theta += sphericalDelta.theta;
+                            spherical.phi += sphericalDelta.phi;
+                        }
+                        let min = scope.minAzimuthAngle;
+                        let max = scope.maxAzimuthAngle;
+                        if (isFinite(min) && isFinite(max)) {
+                            if (min < -Math.PI) min += twoPI; else if (min > Math.PI) min -= twoPI;
+                            if (max < -Math.PI) max += twoPI; else if (max > Math.PI) max -= twoPI;
+                            if (min <= max) {
+                                spherical.theta = Math.max(min, Math.min(max, spherical.theta));
+                            } else {
+                                spherical.theta = spherical.theta > (min + max) / 2 ? Math.max(min, spherical.theta) : Math.min(max, spherical.theta);
+                            }
+                        }
+                        spherical.phi = Math.max(scope.minPolarAngle, Math.min(scope.maxPolarAngle, spherical.phi));
+                        spherical.makeSafe();
+                        spherical.radius *= scale;
+                        spherical.radius = Math.max(scope.minDistance, Math.min(scope.maxDistance, spherical.radius));
+                        if (scope.enableDamping === true) {
+                            scope.target.addScaledVector(panOffset, scope.dampingFactor);
+                        } else {
+                            scope.target.add(panOffset);
+                        }
+                        offset.setFromSpherical(spherical);
+                        offset.applyQuaternion(quatInverse);
+                        position.copy(scope.target).add(offset);
+                        scope.object.lookAt(scope.target);
+                        if (scope.enableDamping === true) {
+                            sphericalDelta.theta *= 1 - scope.dampingFactor;
+                            sphericalDelta.phi *= 1 - scope.dampingFactor;
+                            panOffset.multiplyScalar(1 - scope.dampingFactor);
+                        } else {
+                            sphericalDelta.set(0, 0, 0);
+                            panOffset.set(0, 0, 0);
+                        }
+                        scale = 1;
+                        if (zoomChanged || lastPosition.distanceToSquared(scope.object.position) > EPS || 8 * (1 - lastQuaternion.dot(scope.object.quaternion)) > EPS) {
+                            scope.dispatchEvent(_changeEvent);
+                            lastPosition.copy(scope.object.position);
+                            lastQuaternion.copy(scope.object.quaternion);
+                            zoomChanged = false;
+                            return true;
+                        }
+                        return false;
+                    };
+                }();
+                this.dispose = function() {
+                    scope.domElement.removeEventListener('contextmenu', onContextMenu);
+                    scope.domElement.removeEventListener('pointerdown', onPointerDown);
+                    scope.domElement.removeEventListener('wheel', onMouseWheel);
+                    scope.domElement.removeEventListener('touchstart', onTouchStart);
+                    scope.domElement.removeEventListener('touchend', onTouchEnd);
+                    scope.domElement.removeEventListener('touchmove', onTouchMove);
+                    scope.domElement.ownerDocument.removeEventListener('pointermove', onPointerMove);
+                    scope.domElement.ownerDocument.removeEventListener('pointerup', onPointerUp);
+                    if (scope._domElementKeyEvents !== null) {
+                        scope._domElementKeyEvents.removeEventListener('keydown', onKeyDown);
+                    }
+                };
+
+                function getAutoRotationAngle() {
+                    return 2 * Math.PI / 60 / 60 * scope.autoRotateSpeed;
+                }
+                function getZoomScale() {
+                    return Math.pow(0.95, scope.zoomSpeed);
+                }
+                function rotateLeft(angle) {
+                    sphericalDelta.theta -= angle;
+                }
+                function rotateUp(angle) {
+                    sphericalDelta.phi -= angle;
+                }
+                const panLeft = function() {
+                    const v = new THREE.Vector3();
+                    return function panLeft(distance, objectMatrix) {
+                        v.setFromMatrixColumn(objectMatrix, 0);
+                        v.multiplyScalar(-distance);
+                        panOffset.add(v);
+                    };
+                }();
+                const panUp = function() {
+                    const v = new THREE.Vector3();
+                    return function panUp(distance, objectMatrix) {
+                        if (scope.screenSpacePanning === true) {
+                            v.setFromMatrixColumn(objectMatrix, 1);
+                        } else {
+                            v.setFromMatrixColumn(objectMatrix, 0);
+                            v.crossVectors(scope.object.up, v);
+                        }
+                        v.multiplyScalar(distance);
+                        panOffset.add(v);
+                    };
+                }();
+                const pan = function() {
+                    const offset = new THREE.Vector3();
+                    return function pan(deltaX, deltaY) {
+                        const element = scope.domElement;
+                        if (scope.object.isPerspectiveCamera) {
+                            const position = scope.object.position;
+                            offset.copy(position).sub(scope.target);
+                            let targetDistance = offset.length();
+                            targetDistance *= Math.tan(scope.object.fov / 2 * Math.PI / 180.0);
+                            panLeft(2 * deltaX * targetDistance / element.clientHeight, scope.object.matrix);
+                            panUp(2 * deltaY * targetDistance / element.clientHeight, scope.object.matrix);
+                        } else if (scope.object.isOrthographicCamera) {
+                            panLeft(deltaX * (scope.object.right - scope.object.left) / scope.object.zoom / element.clientWidth, scope.object.matrix);
+                            panUp(deltaY * (scope.object.top - scope.object.bottom) / scope.object.zoom / element.clientHeight, scope.object.matrix);
+                        } else {
+                            console.warn('WARNING: OrbitControls.js encountered an unknown camera type - pan disabled.');
+                            scope.enablePan = false;
+                        }
+                    };
+                }();
+                function dollyOut(dollyScale) {
+                    if (scope.object.isPerspectiveCamera) {
+                        scale /= dollyScale;
+                    } else if (scope.object.isOrthographicCamera) {
+                        scope.object.zoom = Math.max(scope.minZoom, Math.min(scope.maxZoom, scope.object.zoom * dollyScale));
+                        scope.object.updateProjectionMatrix();
+                        zoomChanged = true;
+                    } else {
+                        console.warn('WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.');
+                        scope.enableZoom = false;
+                    }
+                }
+                function dollyIn(dollyScale) {
+                    if (scope.object.isPerspectiveCamera) {
+                        scale *= dollyScale;
+                    } else if (scope.object.isOrthographicCamera) {
+                        scope.object.zoom = Math.max(scope.minZoom, Math.min(scope.maxZoom, scope.object.zoom / dollyScale));
+                        scope.object.updateProjectionMatrix();
+                        zoomChanged = true;
+                    } else {
+                        console.warn('WARNING: OrbitControls.js encountered an unknown camera type - dolly/zoom disabled.');
+                        scope.enableZoom = false;
+                    }
+                }
+                function handleMouseDownRotate(event) {
+                    rotateStart.set(event.clientX, event.clientY);
+                }
+                function handleMouseDownDolly(event) {
+                    dollyStart.set(event.clientX, event.clientY);
+                }
+                function handleMouseDownPan(event) {
+                    panStart.set(event.clientX, event.clientY);
+                }
+                function handleMouseMoveRotate(event) {
+                    rotateEnd.set(event.clientX, event.clientY);
+                    rotateDelta.subVectors(rotateEnd, rotateStart).multiplyScalar(scope.rotateSpeed);
+                    const element = scope.domElement;
+                    rotateLeft(2 * Math.PI * rotateDelta.x / element.clientHeight);
+                    rotateUp(2 * Math.PI * rotateDelta.y / element.clientHeight);
+                    rotateStart.copy(rotateEnd);
+                    scope.update();
+                }
+                function handleMouseMoveDolly(event) {
+                    dollyEnd.set(event.clientX, event.clientY);
+                    dollyDelta.subVectors(dollyEnd, dollyStart);
+                    if (dollyDelta.y > 0) {
+                        dollyOut(getZoomScale());
+                    } else if (dollyDelta.y < 0) {
+                        dollyIn(getZoomScale());
+                    }
+                    dollyStart.copy(dollyEnd);
+                    scope.update();
+                }
+                function handleMouseMovePan(event) {
+                    panEnd.set(event.clientX, event.clientY);
+                    panDelta.subVectors(panEnd, panStart).multiplyScalar(scope.panSpeed);
+                    pan(panDelta.x, panDelta.y);
+                    panStart.copy(panEnd);
+                    scope.update();
+                }
+                function handleMouseUp() {}
+                function handleMouseWheel(event) {
+                    if (event.deltaY < 0) {
+                        dollyIn(getZoomScale());
+                    } else if (event.deltaY > 0) {
+                        dollyOut(getZoomScale());
+                    }
+                    scope.update();
+                }
+                function handleKeyDown(event) {
+                    let needsUpdate = false;
+                    switch (event.code) {
+                        case scope.keys.UP:
+                            pan(0, scope.keyPanSpeed);
+                            needsUpdate = true;
+                            break;
+                        case scope.keys.BOTTOM:
+                            pan(0, -scope.keyPanSpeed);
+                            needsUpdate = true;
+                            break;
+                        case scope.keys.LEFT:
+                            pan(scope.keyPanSpeed, 0);
+                            needsUpdate = true;
+                            break;
+                        case scope.keys.RIGHT:
+                            pan(-scope.keyPanSpeed, 0);
+                            needsUpdate = true;
+                            break;
+                    }
+                    if (needsUpdate) {
+                        event.preventDefault();
+                        scope.update();
+                    }
+                }
+                function handleTouchStartRotate(event) {
+                    if (event.touches.length == 1) {
+                        rotateStart.set(event.touches[0].pageX, event.touches[0].pageY);
+                    } else {
+                        const x = 0.5 * (event.touches[0].pageX + event.touches[1].pageX);
+                        const y = 0.5 * (event.touches[0].pageY + event.touches[1].pageY);
+                        rotateStart.set(x, y);
+                    }
+                }
+                function handleTouchStartPan(event) {
+                    if (event.touches.length == 1) {
+                        panStart.set(event.touches[0].pageX, event.touches[0].pageY);
+                    } else {
+                        const x = 0.5 * (event.touches[0].pageX + event.touches[1].pageX);
+                        const y = 0.5 * (event.touches[0].pageY + event.touches[1].pageY);
+                        panStart.set(x, y);
+                    }
+                }
+                function handleTouchStartDolly(event) {
+                    const dx = event.touches[0].pageX - event.touches[1].pageX;
+                    const dy = event.touches[0].pageY - event.touches[1].pageY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    dollyStart.set(0, distance);
+                }
+                function handleTouchStartDollyPan(event) {
+                    if (scope.enableZoom) handleTouchStartDolly(event);
+                    if (scope.enablePan) handleTouchStartPan(event);
+                }
+                function handleTouchStartDollyRotate(event) {
+                    if (scope.enableZoom) handleTouchStartDolly(event);
+                    if (scope.enableRotate) handleTouchStartRotate(event);
+                }
+                function handleTouchMoveRotate(event) {
+                    if (event.touches.length == 1) {
+                        rotateEnd.set(event.touches[0].pageX, event.touches[0].pageY);
+                    } else {
+                        const x = 0.5 * (event.touches[0].pageX + event.touches[1].pageX);
+                        const y = 0.5 * (event.touches[0].pageY + event.touches[1].pageY);
+                        rotateEnd.set(x, y);
+                    }
+                    rotateDelta.subVectors(rotateEnd, rotateStart).multiplyScalar(scope.rotateSpeed);
+                    const element = scope.domElement;
+                    rotateLeft(2 * Math.PI * rotateDelta.x / element.clientHeight);
+                    rotateUp(2 * Math.PI * rotateDelta.y / element.clientHeight);
+                    rotateStart.copy(rotateEnd);
+                }
+                function handleTouchMovePan(event) {
+                    if (event.touches.length == 1) {
+                        panEnd.set(event.touches[0].pageX, event.touches[0].pageY);
+                    } else {
+                        const x = 0.5 * (event.touches[0].pageX + event.touches[1].pageX);
+                        const y = 0.5 * (event.touches[0].pageY + event.touches[1].pageY);
+                        panEnd.set(x, y);
+                    }
+                    panDelta.subVectors(panEnd, panStart).multiplyScalar(scope.panSpeed);
+                    pan(panDelta.x, panDelta.y);
+                    panStart.copy(panEnd);
+                }
+                function handleTouchMoveDolly(event) {
+                    const dx = event.touches[0].pageX - event.touches[1].pageX;
+                    const dy = event.touches[0].pageY - event.touches[1].pageY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    dollyEnd.set(0, distance);
+                    dollyDelta.set(0, Math.pow(dollyEnd.y / dollyStart.y, scope.zoomSpeed));
+                    dollyOut(dollyDelta.y);
+                    dollyStart.copy(dollyEnd);
+                }
+                function handleTouchMoveDollyPan(event) {
+                    if (scope.enableZoom) handleTouchMoveDolly(event);
+                    if (scope.enablePan) handleTouchMovePan(event);
+                }
+                function handleTouchMoveDollyRotate(event) {
+                    if (scope.enableZoom) handleTouchMoveDolly(event);
+                    if (scope.enableRotate) handleTouchMoveRotate(event);
+                }
+                function handleTouchEnd() {}
+                function onPointerDown(event) {
+                    if (scope.enabled === false) return;
+                    switch (event.pointerType) {
+                        case 'mouse':
+                        case 'pen':
+                            onMouseDown(event);
+                            break;
+                    }
+                }
+                function onPointerMove(event) {
+                    if (scope.enabled === false) return;
+                    switch (event.pointerType) {
+                        case 'mouse':
+                        case 'pen':
+                            onMouseMove(event);
+                            break;
+                    }
+                }
+                function onPointerUp(event) {
+                    switch (event.pointerType) {
+                        case 'mouse':
+                        case 'pen':
+                            onMouseUp(event);
+                            break;
+                    }
+                }
+                function onMouseDown(event) {
+                    event.preventDefault();
+                    switch (event.button) {
+                        case 0:
+                            switch (scope.mouseButtons.LEFT) {
+                                case THREE.MOUSE.ROTATE:
+                                    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                                        if (scope.enablePan === false) return;
+                                        handleMouseDownPan(event);
+                                        state = STATE.PAN;
+                                    } else {
+                                        if (scope.enableRotate === false) return;
+                                        handleMouseDownRotate(event);
+                                        state = STATE.ROTATE;
+                                    }
+                                    break;
+                                case THREE.MOUSE.PAN:
+                                    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                                        if (scope.enableRotate === false) return;
+                                        handleMouseDownRotate(event);
+                                        state = STATE.ROTATE;
+                                    } else {
+                                        if (scope.enablePan === false) return;
+                                        handleMouseDownPan(event);
+                                        state = STATE.PAN;
+                                    }
+                                    break;
+                                default:
+                                    state = STATE.NONE;
+                            }
+                            break;
+                        case 1:
+                            switch (scope.mouseButtons.MIDDLE) {
+                                case THREE.MOUSE.DOLLY:
+                                    if (scope.enableZoom === false) return;
+                                    handleMouseDownDolly(event);
+                                    state = STATE.DOLLY;
+                                    break;
+                                default:
+                                    state = STATE.NONE;
+                            }
+                            break;
+                        case 2:
+                            switch (scope.mouseButtons.RIGHT) {
+                                case THREE.MOUSE.ROTATE:
+                                    if (scope.enableRotate === false) return;
+                                    handleMouseDownRotate(event);
+                                    state = STATE.ROTATE;
+                                    break;
+                                case THREE.MOUSE.PAN:
+                                    if (scope.enablePan === false) return;
+                                    handleMouseDownPan(event);
+                                    state = STATE.PAN;
+                                    break;
+                                default:
+                                    state = STATE.NONE;
+                            }
+                            break;
+                    }
+                    if (state !== STATE.NONE) {
+                        scope.domElement.ownerDocument.addEventListener('pointermove', onPointerMove);
+                        scope.domElement.ownerDocument.addEventListener('pointerup', onPointerUp);
+                        scope.dispatchEvent(_startEvent);
+                    }
+                }
+                function onMouseMove(event) {
+                    if (scope.enabled === false) return;
+                    event.preventDefault();
+                    switch (state) {
+                        case STATE.ROTATE:
+                            if (scope.enableRotate === false) return;
+                            handleMouseMoveRotate(event);
+                            break;
+                        case STATE.DOLLY:
+                            if (scope.enableZoom === false) return;
+                            handleMouseMoveDolly(event);
+                            break;
+                        case STATE.PAN:
+                            if (scope.enablePan === false) return;
+                            handleMouseMovePan(event);
+                            break;
+                    }
+                }
+                function onMouseUp(event) {
+                    if (scope.enabled === false) return;
+                    handleMouseUp(event);
+                    scope.domElement.ownerDocument.removeEventListener('pointermove', onPointerMove);
+                    scope.domElement.ownerDocument.removeEventListener('pointerup', onPointerUp);
+                    scope.dispatchEvent(_endEvent);
+                    state = STATE.NONE;
+                }
+                function onMouseWheel(event) {
+                    if (scope.enabled === false || scope.enableZoom === false || (state !== STATE.NONE && state !== STATE.ROTATE)) return;
+                    event.preventDefault();
+                    scope.dispatchEvent(_startEvent);
+                    handleMouseWheel(event);
+                    scope.dispatchEvent(_endEvent);
+                }
+                function onTouchStart(event) {
+                    if (scope.enabled === false) return;
+                    event.preventDefault();
+                    switch (event.touches.length) {
+                        case 1:
+                            switch (scope.touches.ONE) {
+                                case THREE.MOUSE.ROTATE:
+                                    if (scope.enableRotate === false) return;
+                                    handleTouchStartRotate(event);
+                                    state = STATE.TOUCH_ROTATE;
+                                    break;
+                                case THREE.MOUSE.PAN:
+                                    if (scope.enablePan === false) return;
+                                    handleTouchStartPan(event);
+                                    state = STATE.TOUCH_PAN;
+                                    break;
+                                default:
+                                    state = STATE.NONE;
+                            }
+                            break;
+                        case 2:
+                            switch (scope.touches.TWO) {
+                                case THREE.MOUSE.DOLLY_PAN:
+                                    if (scope.enableZoom === false && scope.enablePan === false) return;
+                                    handleTouchStartDollyPan(event);
+                                    state = STATE.TOUCH_DOLLY_PAN;
+                                    break;
+                                case THREE.MOUSE.DOLLY_ROTATE:
+                                    if (scope.enableZoom === false && scope.enableRotate === false) return;
+                                    handleTouchStartDollyRotate(event);
+                                    state = STATE.TOUCH_DOLLY_ROTATE;
+                                    break;
+                                default:
+                                    state = STATE.NONE;
+                            }
+                            break;
+                        default:
+                            state = STATE.NONE;
+                    }
+                    if (state !== STATE.NONE) {
+                        scope.dispatchEvent(_startEvent);
+                    }
+                }
+                function onTouchMove(event) {
+                    if (scope.enabled === false) return;
+                    event.preventDefault();
+                    switch (state) {
+                        case STATE.TOUCH_ROTATE:
+                            if (scope.enableRotate === false) return;
+                            handleTouchMoveRotate(event);
+                            scope.update();
+                            break;
+                        case STATE.TOUCH_PAN:
+                            if (scope.enablePan === false) return;
+                            handleTouchMovePan(event);
+                            scope.update();
+                            break;
+                        case STATE.TOUCH_DOLLY_PAN:
+                            if (scope.enableZoom === false && scope.enablePan === false) return;
+                            handleTouchMoveDollyPan(event);
+                            scope.update();
+                            break;
+                        case STATE.TOUCH_DOLLY_ROTATE:
+                            if (scope.enableZoom === false && scope.enableRotate === false) return;
+                            handleTouchMoveDollyRotate(event);
+                            scope.update();
+                            break;
+                        default:
+                            state = STATE.NONE;
+                    }
+                }
+                function onTouchEnd(event) {
+                    if (scope.enabled === false) return;
+                    handleTouchEnd(event);
+                    scope.dispatchEvent(_endEvent);
+                    state = STATE.NONE;
+                }
+                function onContextMenu(event) {
+                    if (scope.enabled === false) return;
+                    event.preventDefault();
+                }
+
+                scope.domElement.addEventListener('contextmenu', onContextMenu);
+                scope.domElement.addEventListener('pointerdown', onPointerDown);
+                scope.domElement.addEventListener('wheel', onMouseWheel, { passive: false });
+                scope.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
+                scope.domElement.addEventListener('touchend', onTouchEnd);
+                scope.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
+                this.update();
+            }
+        }
+        THREE.OrbitControls = OrbitControls;
+    })();
+    </script>
+
+    <script>
+        class TyphoonVisualization {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.controls = null;
+
+                // 地球
+                this.earth = null;
+                this.earthGroup = null;
+                this.clouds = null;
+                this.atmosphere = null;
+                this.autoRotate = true;
+
+                // 台风系统
+                this.typhoonGroup = null;
+                this.typhoonParticles = null;
+                this.windParticles = null;
+                this.eyeLight = null;
+
+                // 路径
+                this.typhoonPath = null;
+                this.pathCurve = null;
+
+                // 降雨系统
+                this.rainSystem = null;
+                this.rainCount = 8000;
+                this.rainEnabled = true;
+
+                // 闪电系统
+                this.lightningLight = null;
+                this.lightningEnabled = true;
+                this.nextLightningTime = 0;
+                this.lightningDuration = 0;
+                this.isLightning = false;
+                this.flashElement = null;
+
+                // 参数
+                this.windIntensity = 3;
+                this.animationSpeed = 0.001;
+                this.particleCount = 35000;
+                this.windParticleCount = 500;
+
+                // 统计
+                this.lastTime = 0;
+                this.frameCount = 0;
+
+                this.initialize();
+                this.animate();
+            }
+
+            initialize() {
+                this.setupScene();
+                this.setupLights();
+                this.createEarth();
+                this.createTyphoon();
+                this.createRainSystem();
+                this.createLightningSystem();
+                this.createTyphoonPath();
+                this.setupEventListeners();
+                this.updateStats();
+            }
+
+            setupScene() {
+                this.scene = new THREE.Scene();
+                this.scene.fog = new THREE.FogExp2(0x0a0e1a, 0.002);
+
+                this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.camera.position.set(0, 30, 60);
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(window.devicePixelRatio);
+                this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                this.renderer.outputEncoding = THREE.sRGBEncoding;
+                document.body.appendChild(this.renderer.domElement);
+
+                this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.05;
+                this.controls.minDistance = 35;
+                this.controls.maxDistance = 150;
+                this.controls.autoRotate = false;
+                this.controls.autoRotateSpeed = 0.5;
+
+                this.flashElement = document.getElementById('lightningFlash');
+            }
+
+            setupLights() {
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+                this.scene.add(ambientLight);
+
+                const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+                sunLight.position.set(50, 30, 50);
+                sunLight.castShadow = true;
+                this.scene.add(sunLight);
+
+                const backLight = new THREE.DirectionalLight(0x445566, 0.5);
+                backLight.position.set(-50, 10, -50);
+                this.scene.add(backLight);
+            }
+
+            // 创建程序化地球纹理
+            createEarthTexture() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1024;
+                canvas.height = 512;
+                const ctx = canvas.getContext('2d');
+
+                // 海洋背景
+                const oceanGradient = ctx.createLinearGradient(0, 0, 0, 512);
+                oceanGradient.addColorStop(0, '#1a4d6e');
+                oceanGradient.addColorStop(0.5, '#0d3a5c');
+                oceanGradient.addColorStop(1, '#1a4d6e');
+                ctx.fillStyle = oceanGradient;
+                ctx.fillRect(0, 0, 1024, 512);
+
+                // 绘制大陆轮廓（简化版）
+                ctx.fillStyle = '#2d5a3d';
+                
+                // 亚洲
+                ctx.beginPath();
+                ctx.ellipse(700, 180, 150, 100, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 欧洲
+                ctx.beginPath();
+                ctx.ellipse(520, 150, 80, 50, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 非洲
+                ctx.beginPath();
+                ctx.ellipse(530, 280, 70, 120, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 北美洲
+                ctx.beginPath();
+                ctx.ellipse(200, 160, 120, 90, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 南美洲
+                ctx.beginPath();
+                ctx.ellipse(280, 350, 60, 100, 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 澳大利亚
+                ctx.beginPath();
+                ctx.ellipse(850, 380, 70, 50, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 添加一些细节纹理
+                for (let i = 0; i < 500; i++) {
+                    const x = Math.random() * 1024;
+                    const y = Math.random() * 512;
+                    const size = Math.random() * 3 + 1;
+                    ctx.fillStyle = `rgba(45, 90, 61, ${Math.random() * 0.3 + 0.1})`;
+                    ctx.beginPath();
+                    ctx.arc(x, y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.needsUpdate = true;
+                return texture;
+            }
+
+            // 创建云层纹理
+            createCloudTexture() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 512;
+                canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+
+                ctx.fillStyle = 'rgba(0,0,0,0)';
+                ctx.fillRect(0, 0, 512, 256);
+
+                for (let i = 0; i < 100; i++) {
+                    const x = Math.random() * 512;
+                    const y = Math.random() * 256;
+                    const w = Math.random() * 100 + 50;
+                    const h = Math.random() * 30 + 20;
+                    
+                    const gradient = ctx.createRadialGradient(x, y, 0, x, y, w);
+                    gradient.addColorStop(0, 'rgba(255,255,255,0.4)');
+                    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+                    
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.ellipse(x, y, w, h, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.needsUpdate = true;
+                return texture;
+            }
+
+            createEarth() {
+                this.earthGroup = new THREE.Group();
+
+                // 地球本体
+                const earthGeometry = new THREE.SphereGeometry(20, 128, 128);
+                const earthTexture = this.createEarthTexture();
+                const earthMaterial = new THREE.MeshPhongMaterial({
+                    map: earthTexture,
+                    shininess: 25,
+                    specular: new THREE.Color(0x333333)
+                });
+                this.earth = new THREE.Mesh(earthGeometry, earthMaterial);
+                this.earthGroup.add(this.earth);
+
+                // 云层
+                const cloudGeometry = new THREE.SphereGeometry(20.3, 64, 64);
+                const cloudTexture = this.createCloudTexture();
+                const cloudMaterial = new THREE.MeshPhongMaterial({
+                    map: cloudTexture,
+                    transparent: true,
+                    opacity: 0.4,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
+                });
+                this.clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+                this.earthGroup.add(this.clouds);
+
+                // 大气层光晕
+                const atmosphereGeometry = new THREE.SphereGeometry(21, 64, 64);
+                const atmosphereMaterial = new THREE.ShaderMaterial({
+                    uniforms: {
+                        c: { value: 0.6 },
+                        p: { value: 4.0 },
+                        glowColor: { value: new THREE.Color(0x4a9eff) },
+                        viewVector: { value: this.camera.position }
+                    },
+                    vertexShader: `
+                        uniform vec3 viewVector;
+                        varying float intensity;
+                        void main() {
+                            vec3 vNormal = normalize(normalMatrix * normal);
+                            vec3 vNormel = normalize(normalMatrix * viewVector);
+                            intensity = pow(0.6 - dot(vNormal, vNormel), 4.0);
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform vec3 glowColor;
+                        varying float intensity;
+                        void main() {
+                            vec3 glow = glowColor * intensity;
+                            gl_FragColor = vec4(glow, intensity);
+                        }
+                    `,
+                    side: THREE.BackSide,
+                    blending: THREE.AdditiveBlending,
+                    transparent: true
+                });
+                this.atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+                this.earthGroup.add(this.atmosphere);
+
+                // 调整地球位置，让台风区域可见
+                this.earthGroup.rotation.x = 0.3;
+                this.earthGroup.rotation.y = -0.5;
+                
+                this.scene.add(this.earthGroup);
+            }
+
+            latLonToVector3(lat, lon, radius) {
+                const phi = (90 - lat) * (Math.PI / 180);
+                const theta = (lon + 180) * (Math.PI / 180);
+                const x = -(radius * Math.sin(phi) * Math.cos(theta));
+                const z = (radius * Math.sin(phi) * Math.sin(theta));
+                const y = (radius * Math.cos(phi));
+                return new THREE.Vector3(x, y, z);
+            }
+
+            createTyphoon() {
+                this.typhoonGroup = new THREE.Group();
+
+                // 台风位置（西太平洋区域）
+                const typhoonLat = 25;
+                const typhoonLon = 130;
+                const typhoonPos = this.latLonToVector3(typhoonLat, typhoonLon, 20);
+                this.typhoonGroup.position.copy(typhoonPos);
+
+                // 让台风组朝向地球中心向外
+                this.typhoonGroup.lookAt(new THREE.Vector3(0, 0, 0));
+                this.typhoonGroup.rotateX(Math.PI);
+
+                // 创建台风粒子云墙
+                this.createTyphoonClouds();
+                
+                // 创建台风眼
+                this.createTyphoonEye();
+                
+                // 创建风力场
+                this.createWindField();
+
+                this.earthGroup.add(this.typhoonGroup);
+            }
+
+            createTyphoonClouds() {
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(this.particleCount * 3);
+                const colors = new Float32Array(this.particleCount * 3);
+                const sizes = new Float32Array(this.particleCount);
+                const originalColors = new Float32Array(this.particleCount * 3);
+
+                const arms = 6;
+                const eyeRadius = 2;
+                const maxRadius = 18;
+
+                for (let i = 0; i < this.particleCount; i++) {
+                    const arm = Math.floor(i / (this.particleCount / arms));
+                    const t = (i % (this.particleCount / arms)) / (this.particleCount / arms);
+                    
+                    const angle = t * Math.PI * 4 + arm * (Math.PI * 2 / arms);
+                    const radius = eyeRadius + Math.pow(t, 0.7) * (maxRadius - eyeRadius);
+                    
+                    const heightVariation = Math.exp(-radius / 8) * 8;
+                    const height = Math.random() * heightVariation + 1;
+
+                    const spread = 0.3 + (radius / maxRadius) * 0.5;
+                    const r = radius + (Math.random() - 0.5) * spread * 2;
+
+                    const x = Math.cos(angle) * r;
+                    const z = Math.sin(angle) * r;
+                    const y = height + Math.random() * 2;
+
+                    positions[i * 3] = x;
+                    positions[i * 3 + 1] = y;
+                    positions[i * 3 + 2] = z;
+
+                    // 颜色根据距离变化 - 靠近中心更白，外围更灰
+                    const distRatio = radius / maxRadius;
+                    const gray = 0.7 + Math.random() * 0.3;
+                    const whiteness = 1 - distRatio * 0.4;
+                    
+                    colors[i * 3] = gray * whiteness;
+                    colors[i * 3 + 1] = gray * whiteness;
+                    colors[i * 3 + 2] = gray * whiteness;
+                    
+                    originalColors[i * 3] = colors[i * 3];
+                    originalColors[i * 3 + 1] = colors[i * 3 + 1];
+                    originalColors[i * 3 + 2] = colors[i * 3 + 2];
+
+                    sizes[i] = (Math.random() * 0.5 + 0.2) * (1.5 - distRatio * 0.5);
+                }
+
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+                geometry.setAttribute('originalColor', new THREE.BufferAttribute(originalColors, 3));
+
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        time: { value: 0.0 },
+                        lightningIntensity: { value: 0.0 }
+                    },
+                    vertexShader: `
+                        attribute float size;
+                        uniform float time;
+                        uniform float lightningIntensity;
+                        varying vec3 vColor;
+                        varying float vDistance;
+                        varying float vLightning;
+                        
+                        void main() {
+                            vColor = color;
+                            vDistance = length(position.xz);
+                            vLightning = lightningIntensity;
+                            
+                            // 闪电时粒子变大
+                            float sizeMultiplier = 1.0 + lightningIntensity * 0.5;
+                            
+                            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                            gl_PointSize = size * sizeMultiplier * (300.0 / -mvPosition.z);
+                            gl_Position = projectionMatrix * mvPosition;
+                        }
+                    `,
+                    fragmentShader: `
+                        varying vec3 vColor;
+                        varying float vDistance;
+                        varying float vLightning;
+                        
+                        void main() {
+                            float dist = distance(gl_PointCoord, vec2(0.5));
+                            float strength = 1.0 - smoothstep(0.0, 0.5, dist);
+                            
+                            vec3 finalColor = vColor;
+                            
+                            // 闪电时变为明显的蓝白色，强度更高
+                            if (vLightning > 0.0) {
+                                // 蓝白色闪电效果
+                                vec3 lightningColor = vec3(0.7, 0.85, 1.0);
+                                // 混合强度更高，效果更明显
+                                float blendFactor = min(vLightning * 1.2, 0.95);
+                                finalColor = mix(finalColor, lightningColor, blendFactor);
+                                // 增加亮度
+                                finalColor *= (1.0 + vLightning * 0.8);
+                            }
+                            
+                            gl_FragColor = vec4(finalColor, strength * 0.8);
+                        }
+                    `,
+                    blending: THREE.AdditiveBlending,
+                    vertexColors: true,
+                    transparent: true,
+                    depthWrite: false
+                });
+
+                this.typhoonParticles = new THREE.Points(geometry, material);
+                this.typhoonGroup.add(this.typhoonParticles);
+            }
+
+            createTyphoonEye() {
+                // 台风眼壁
+                const eyeGeometry = new THREE.RingGeometry(1.5, 2.2, 32);
+                const eyeMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.6,
+                    side: THREE.DoubleSide
+                });
+                const eyeWall = new THREE.Mesh(eyeGeometry, eyeMaterial);
+                eyeWall.rotation.x = -Math.PI / 2;
+                eyeWall.position.y = 3;
+                this.typhoonGroup.add(eyeWall);
+
+                // 台风眼中心光源
+                this.eyeLight = new THREE.PointLight(0x4a9eff, 1, 30);
+                this.eyeLight.position.set(0, 5, 0);
+                this.typhoonGroup.add(this.eyeLight);
+
+                // 眼中心下沉气流可视化
+                const eyeCenterGeometry = new THREE.CircleGeometry(1.5, 32);
+                const eyeCenterMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x87ceeb,
+                    transparent: true,
+                    opacity: 0.3,
+                    side: THREE.DoubleSide
+                });
+                const eyeCenter = new THREE.Mesh(eyeCenterGeometry, eyeCenterMaterial);
+                eyeCenter.rotation.x = -Math.PI / 2;
+                eyeCenter.position.y = 3;
+                this.typhoonGroup.add(eyeCenter);
+            }
+
+            createWindField() {
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(this.windParticleCount * 3);
+                const colors = new Float32Array(this.windParticleCount * 3);
+                const velocities = new Float32Array(this.windParticleCount * 3);
+
+                for (let i = 0; i < this.windParticleCount; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.random() * 20 + 3;
+                    const height = Math.random() * 8 + 2;
+
+                    const x = Math.cos(angle) * radius;
+                    const z = Math.sin(angle) * radius;
+                    const y = height;
+
+                    positions[i * 3] = x;
+                    positions[i * 3 + 1] = y;
+                    positions[i * 3 + 2] = z;
+
+                    // 根据距离设置颜色
+                    const distRatio = radius / 23;
+                    colors[i * 3] = 0.6 + distRatio * 0.2;
+                    colors[i * 3 + 1] = 0.8 + distRatio * 0.1;
+                    colors[i * 3 + 2] = 1.0;
+
+                    // 切向速度
+                    const speed = (25 / radius) * 0.1;
+                    velocities[i * 3] = -Math.sin(angle) * speed;
+                    velocities[i * 3 + 1] = 0;
+                    velocities[i * 3 + 2] = Math.cos(angle) * speed;
+                }
+
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+
+                const material = new THREE.PointsMaterial({
+                    size: 0.15,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.7,
+                    blending: THREE.AdditiveBlending
+                });
+
+                this.windParticles = new THREE.Points(geometry, material);
+                this.typhoonGroup.add(this.windParticles);
+            }
+
+            createRainSystem() {
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(this.rainCount * 3);
+                const velocities = new Float32Array(this.rainCount);
+                const distances = new Float32Array(this.rainCount);
+
+                for (let i = 0; i < this.rainCount; i++) {
+                    this.resetRainDrop(i, positions, velocities, distances, true);
+                }
+
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 1));
+                geometry.setAttribute('distance', new THREE.BufferAttribute(distances, 1));
+
+                // 雨滴材质 - 蓝色半透明
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        time: { value: 0.0 },
+                        windIntensity: { value: this.windIntensity }
+                    },
+                    vertexShader: `
+                        attribute float velocity;
+                        attribute float distance;
+                        uniform float time;
+                        uniform float windIntensity;
+                        varying float vAlpha;
+                        varying float vVelocity;
+                        
+                        void main() {
+                            vAlpha = 1.0 - distance / 25.0;
+                            vVelocity = velocity;
+                            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                            gl_PointSize = 2.0 + velocity * 3.0;
+                            gl_Position = projectionMatrix * mvPosition;
+                        }
+                    `,
+                    fragmentShader: `
+                        varying float vAlpha;
+                        varying float vVelocity;
+                        
+                        void main() {
+                            float dist = distance(gl_PointCoord, vec2(0.5));
+                            if (dist > 0.5) discard;
+                            
+                            // 蓝色雨滴，中心更亮
+                            vec3 rainColor = vec3(0.4, 0.7, 1.0);
+                            float strength = 1.0 - dist * 2.0;
+                            
+                            // 运动模糊效果 - 速度越快越拉长
+                            float blur = vVelocity * 0.5;
+                            
+                            gl_FragColor = vec4(rainColor, vAlpha * 0.6 * strength);
+                        }
+                    `,
+                    blending: THREE.AdditiveBlending,
+                    transparent: true,
+                    depthWrite: false
+                });
+
+                this.rainSystem = new THREE.Points(geometry, material);
+                this.rainSystem.visible = this.rainEnabled;
+                this.typhoonGroup.add(this.rainSystem);
+            }
+
+            resetRainDrop(index, positions, velocities, distances, initial = false) {
+                const angle = Math.random() * Math.PI * 2;
+                // 靠近中心区域雨势更密集
+                const radiusBias = Math.random();
+                const radius = radiusBias * radiusBias * 22 + 2;
+                
+                const height = initial ? Math.random() * 15 + 5 : 15 + Math.random() * 5;
+
+                const x = Math.cos(angle) * radius;
+                const z = Math.sin(angle) * radius;
+
+                positions[index * 3] = x;
+                positions[index * 3 + 1] = height;
+                positions[index * 3 + 2] = z;
+
+                // 靠近中心下落速度更快
+                const centerFactor = 1 - (radius / 25);
+                velocities[index] = 0.15 + centerFactor * 0.25 + Math.random() * 0.1;
+                distances[index] = radius;
+            }
+
+            createLightningSystem() {
+                // 闪电光源
+                this.lightningLight = new THREE.PointLight(0xaaddff, 0, 60);
+                this.lightningLight.position.set(0, 10, 0);
+                this.typhoonGroup.add(this.lightningLight);
+
+                // 设置下次闪电时间
+                this.scheduleNextLightning();
+            }
+
+            scheduleNextLightning() {
+                this.nextLightningTime = Date.now() + (2000 + Math.random() * 3000);
+            }
+
+            triggerLightning() {
+                if (!this.lightningEnabled) return;
+
+                this.isLightning = true;
+                this.lightningDuration = 150 + Math.random() * 200;
+                this.lightningStartTime = Date.now();
+
+                // 随机位置（云层内部）
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 3 + Math.random() * 12;
+                const height = 5 + Math.random() * 10;
+
+                this.lightningLight.position.set(
+                    Math.cos(angle) * radius,
+                    height,
+                    Math.sin(angle) * radius
+                );
+
+                // 屏幕闪光效果
+                if (this.flashElement) {
+                    this.flashElement.style.opacity = '0.3';
+                    setTimeout(() => {
+                        this.flashElement.style.opacity = '0';
+                    }, 50);
+                }
+            }
+
+            createTyphoonPath() {
+                // 台风历史路径点（经纬度）
+                const pathPoints = [
+                    { lat: 15, lon: 140 },
+                    { lat: 17, lon: 138 },
+                    { lat: 20, lon: 135 },
+                    { lat: 23, lon: 132 },
+                    { lat: 25, lon: 130 },
+                    { lat: 28, lon: 128 },
+                    { lat: 32, lon: 126 }
+                ];
+
+                // 转换为3D坐标
+                const points3D = pathPoints.map(p => 
+                    this.latLonToVector3(p.lat, p.lon, 20.1)
+                );
+
+                // 创建贝塞尔曲线路径
+                this.pathCurve = new THREE.CatmullRomCurve3(points3D);
+                this.pathCurve.curveType = 'catmullrom';
+                this.pathCurve.tension = 0.5;
+
+                // 绘制平滑路径
+                const pathGeometry = new THREE.TubeGeometry(this.pathCurve, 100, 0.15, 8, false);
+                const pathMaterial = new THREE.MeshPhongMaterial({
+                    color: 0xff6600,
+                    emissive: 0xff2200,
+                    emissiveIntensity: 0.3,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                this.typhoonPath = new THREE.Mesh(pathGeometry, pathMaterial);
+                this.earthGroup.add(this.typhoonPath);
+
+                // 添加路径点标记
+                pathPoints.forEach((p, i) => {
+                    const pos = this.latLonToVector3(p.lat, p.lon, 20.2);
+                    const markerGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+                    const markerMaterial = new THREE.MeshPhongMaterial({
+                        color: i === pathPoints.length - 1 ? 0xff0000 : 0xffaa00,
+                        emissive: i === pathPoints.length - 1 ? 0xff0000 : 0xff6600,
+                        emissiveIntensity: 0.5
+                    });
+                    const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+                    marker.position.copy(pos);
+                    
+                    // 让标记朝向地球中心向外
+                    marker.lookAt(new THREE.Vector3(0, 0, 0));
+                    marker.rotateX(Math.PI);
+                    
+                    this.earthGroup.add(marker);
+
+                    // 添加时间标签
+                    const day = 15 + i;
+                    this.createTextLabel(`${day}日`, pos, 0.8);
+                });
+
+                // 起点标记
+                const startPos = points3D[0];
+                const startMarker = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.4, 16, 16),
+                    new THREE.MeshPhongMaterial({
+                        color: 0x00ff00,
+                        emissive: 0x00aa00,
+                        emissiveIntensity: 0.5
+                    })
+                );
+                startMarker.position.copy(startPos);
+                startMarker.lookAt(new THREE.Vector3(0, 0, 0));
+                startMarker.rotateX(Math.PI);
+                this.earthGroup.add(startMarker);
+
+                this.createTextLabel('生成点', startPos, 1);
+            }
+
+            createTextLabel(text, position, offset) {
+                // 创建简单的标记点代替文字（Three.js文字需要额外字体文件）
+                const labelGeometry = new THREE.RingGeometry(0.1, 0.2, 16);
+                const labelMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.8,
+                    side: THREE.DoubleSide
+                });
+                const label = new THREE.Mesh(labelGeometry, labelMaterial);
+                
+                const labelPos = position.clone().normalize().multiplyScalar(21 + offset);
+                label.position.copy(labelPos);
+                label.lookAt(new THREE.Vector3(0, 0, 0));
+                label.rotateX(Math.PI);
+                
+                this.earthGroup.add(label);
+            }
+
+            update() {
+                const time = Date.now() * 0.001;
+                const delta = 0.016;
+
+                // 地球自转
+                if (this.autoRotate && this.earthGroup) {
+                    this.earthGroup.rotation.y += 0.0005;
+                }
+
+                // 云层缓慢旋转
+                if (this.clouds) {
+                    this.clouds.rotation.y += 0.0002;
+                }
+
+                // 更新大气层效果
+                if (this.atmosphere) {
+                    this.atmosphere.material.uniforms.viewVector.value = this.camera.position;
+                }
+
+                // 台风旋转
+                if (this.typhoonParticles) {
+                    this.typhoonParticles.rotation.y += 0.002 * this.windIntensity;
+                    this.typhoonParticles.material.uniforms.time.value = time;
+                }
+
+                // 更新台风粒子位置（螺旋运动）
+                if (this.typhoonParticles) {
+                    const positions = this.typhoonParticles.geometry.attributes.position;
+                    for (let i = 0; i < Math.min(5000, positions.count); i += 10) {
+                        const x = positions.getX(i);
+                        const z = positions.getZ(i);
+                        const angle = Math.atan2(z, x);
+                        const radius = Math.sqrt(x * x + z * z);
+                        
+                        if (radius > 2) {
+                            const newAngle = angle + 0.001 * this.windIntensity * (20 / radius);
+                            positions.setX(i, Math.cos(newAngle) * radius);
+                            positions.setZ(i, Math.sin(newAngle) * radius);
+                        }
+                    }
+                    positions.needsUpdate = true;
+                }
+
+                // 更新风力场
+                if (this.windParticles) {
+                    const positions = this.windParticles.geometry.attributes.position;
+                    const count = positions.count;
+                    
+                    for (let i = 0; i < count; i++) {
+                        const x = positions.getX(i);
+                        const z = positions.getZ(i);
+                        const y = positions.getY(i);
+                        
+                        const angle = Math.atan2(z, x);
+                        const radius = Math.sqrt(x * x + z * z);
+                        
+                        // 螺旋运动
+                        const speed = 0.05 * this.windIntensity * (15 / Math.max(radius, 3));
+                        const newAngle = angle + speed * 0.1;
+                        
+                        // 向内螺旋
+                        const newRadius = Math.max(2, radius - 0.01 * this.windIntensity);
+                        
+                        positions.setX(i, Math.cos(newAngle) * newRadius);
+                        positions.setZ(i, Math.sin(newAngle) * newRadius);
+                        
+                        // 高度波动
+                        positions.setY(i, y + Math.sin(time * 2 + i) * 0.02);
+                        
+                        // 重置远离的粒子
+                        if (newRadius < 2.5) {
+                            const resetAngle = Math.random() * Math.PI * 2;
+                            const resetRadius = 18 + Math.random() * 5;
+                            positions.setX(i, Math.cos(resetAngle) * resetRadius);
+                            positions.setZ(i, Math.sin(resetAngle) * resetRadius);
+                            positions.setY(i, Math.random() * 8 + 2);
+                        }
+                    }
+                    positions.needsUpdate = true;
+                }
+
+                // 更新降雨
+                if (this.rainEnabled && this.rainSystem && this.rainSystem.visible) {
+                    const positions = this.rainSystem.geometry.attributes.position;
+                    const velocities = this.rainSystem.geometry.attributes.velocity;
+                    const distances = this.rainSystem.geometry.attributes.distance;
+                    const count = positions.count;
+
+                    for (let i = 0; i < count; i++) {
+                        const x = positions.getX(i);
+                        let y = positions.getY(i);
+                        const z = positions.getZ(i);
+                        const velocity = velocities.getX(i);
+                        const distance = distances.getX(i);
+
+                        // 受风力影响的倾斜 - 明显倾斜效果
+                        // 风力越强倾斜越大，靠近中心倾斜更明显
+                        const centerFactor = 1 - Math.min(distance / 20, 1);
+                        const windTilt = this.windIntensity * 0.8 * (0.5 + centerFactor * 0.5);
+                        const angle = Math.atan2(z, x);
+
+                        // 下落
+                        y -= velocity;
+                        
+                        // 风力倾斜（向外且切向）
+                        const tiltX = Math.cos(angle) * windTilt + Math.cos(angle + Math.PI/2) * windTilt * 0.3;
+                        const tiltZ = Math.sin(angle) * windTilt + Math.sin(angle + Math.PI/2) * windTilt * 0.3;
+
+                        positions.setX(i, x + tiltX * 0.05);
+                        positions.setZ(i, z + tiltZ * 0.05);
+                        positions.setY(i, y);
+
+                        // 落到地面（y=-5 相对于台风组）后重置
+                        if (y < -5) {
+                            this.resetRainDrop(i, positions.array, velocities.array, distances.array);
+                        }
+                    }
+                    positions.needsUpdate = true;
+                }
+
+                // 闪电效果
+                this.updateLightning(time);
+
+                // 更新台风眼光源
+                if (this.eyeLight) {
+                    this.eyeLight.intensity = 1.2 + Math.sin(time * 3) * 0.3;
+                }
+            }
+
+            updateLightning(time) {
+                const now = Date.now();
+
+                // 检查是否触发新闪电
+                if (!this.isLightning && now > this.nextLightningTime && this.lightningEnabled) {
+                    this.triggerLightning();
+                }
+
+                // 更新闪电状态
+                if (this.isLightning) {
+                    const elapsed = now - this.lightningStartTime;
+                    const progress = elapsed / this.lightningDuration;
+
+                    if (progress >= 1) {
+                        // 闪电结束
+                        this.isLightning = false;
+                        this.lightningLight.intensity = 0;
+                        if (this.typhoonParticles) {
+                            this.typhoonParticles.material.uniforms.lightningIntensity.value = 0;
+                        }
+                        this.scheduleNextLightning();
+                    } else {
+                        // 闪电进行中 - 快速衰减，增强亮度
+                        const baseIntensity = Math.exp(-progress * 4) * 5; // 增加基础亮度到5
+                        
+                        // 添加闪烁效果
+                        const flicker = 1.0 + Math.sin(progress * 30) * 0.3 * (1.0 - progress);
+                        const intensity = baseIntensity * flicker;
+                        
+                        this.lightningLight.intensity = intensity;
+                        
+                        if (this.typhoonParticles) {
+                            // 增加粒子闪电强度，使蓝白色更明显
+                            this.typhoonParticles.material.uniforms.lightningIntensity.value = Math.min(intensity * 0.6, 2.0);
+                        }
+
+                        // 多次闪烁 - 增强效果
+                        if (progress > 0.2 && progress < 0.25) {
+                            this.lightningLight.intensity = intensity * 0.8;
+                        }
+                        if (progress > 0.4 && progress < 0.45) {
+                            this.lightningLight.intensity = intensity * 0.6;
+                        }
+                    }
+                }
+            }
+
+            updateStats() {
+                const totalParticles = this.particleCount + this.windParticleCount + this.rainCount;
+                document.getElementById('particleCount').textContent = totalParticles.toLocaleString();
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+
+                // FPS计算
+                this.frameCount++;
+                const now = Date.now();
+                if (now - this.lastTime >= 1000) {
+                    document.getElementById('fps').textContent = this.frameCount;
+                    this.frameCount = 0;
+                    this.lastTime = now;
+                }
+
+                this.update();
+                this.controls.update();
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            setupEventListeners() {
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+
+                // UI控制
+                document.getElementById('rainToggle').addEventListener('change', (e) => {
+                    this.rainEnabled = e.target.checked;
+                    if (this.rainSystem) {
+                        this.rainSystem.visible = this.rainEnabled;
+                    }
+                });
+
+                document.getElementById('lightningToggle').addEventListener('change', (e) => {
+                    this.lightningEnabled = e.target.checked;
+                    if (!this.lightningEnabled && this.isLightning) {
+                        this.isLightning = false;
+                        this.lightningLight.intensity = 0;
+                        if (this.typhoonParticles) {
+                            this.typhoonParticles.material.uniforms.lightningIntensity.value = 0;
+                        }
+                    }
+                });
+
+                document.getElementById('autoRotateToggle').addEventListener('change', (e) => {
+                    this.autoRotate = e.target.checked;
+                });
+
+                document.getElementById('windSlider').addEventListener('input', (e) => {
+                    this.windIntensity = parseInt(e.target.value);
+                    document.getElementById('windValue').textContent = this.windIntensity;
+                    if (this.rainSystem) {
+                        this.rainSystem.material.uniforms.windIntensity.value = this.windIntensity;
+                    }
+                });
+
+                // 键盘控制
+                window.addEventListener('keydown', (event) => {
+                    const key = parseInt(event.key);
+                    if (key >= 1 && key <= 5) {
+                        this.windIntensity = key;
+                        document.getElementById('windSlider').value = key;
+                        document.getElementById('windValue').textContent = key;
+                        if (this.rainSystem) {
+                            this.rainSystem.material.uniforms.windIntensity.value = this.windIntensity;
+                        }
+                    }
+                });
+            }
+        }
+
+        // 启动应用
+        window.addEventListener('load', () => {
+            new TyphoonVisualization();
+        });
+    </script>
+</body>
+</html>

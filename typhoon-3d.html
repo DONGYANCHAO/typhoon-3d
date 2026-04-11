@@ -4,35 +4,396 @@
     <meta charset="UTF-8">
     <title>Interactive 3D Typhoon Path Visualization</title>
     <style>
-        html, body {
+        * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
             height: 100%;
             width: 100%;
             background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
             overflow: hidden;
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Arial, sans-serif;
         }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+        
+        .scene-container {
+            flex: 1;
+            position: relative;
+            min-width: 0;
+        }
+        
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+        }
+        
         canvas {
             display: block;
         }
+        
         .ui-overlay {
             position: absolute;
-            top: 20px;
+            bottom: 20px;
             left: 20px;
             color: white;
             background-color: rgba(0, 0, 0, 0.7);
-            padding: 10px;
+            padding: 15px;
             border-radius: 8px;
+            font-size: 13px;
+            border: 1px solid rgba(100, 180, 255, 0.3);
+        }
+        
+        .ui-overlay p {
+            margin: 5px 0;
+        }
+        
+        .current-info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(10, 20, 50, 0.9);
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: #fff;
             font-size: 14px;
+            border: 1px solid rgba(100, 180, 255, 0.3);
+        }
+        
+        .current-info .label {
+            color: #90caf9;
+            font-size: 12px;
+        }
+        
+        .current-info .value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #4fc3f7;
+        }
+        
+        .data-panel {
+            width: 380px;
+            background: rgba(10, 20, 50, 0.95);
+            border-left: 2px solid rgba(100, 180, 255, 0.3);
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: -5px 0 30px rgba(0, 0, 0, 0.5);
+        }
+        
+        .panel-title {
+            font-size: 24px;
+            color: #4fc3f7;
+            text-align: center;
+            margin-bottom: 20px;
+            text-shadow: 0 0 20px rgba(79, 195, 247, 0.5);
+            border-bottom: 2px solid rgba(79, 195, 247, 0.3);
+            padding-bottom: 15px;
+        }
+        
+        .typhoon-name {
+            font-size: 28px;
+            color: #fff;
+            text-align: center;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        
+        .typhoon-level {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 10px auto;
+            text-align: center;
+            display: block;
+            width: fit-content;
+            transition: all 0.3s ease;
+        }
+        
+        .typhoon-level.normal {
+            background: linear-gradient(135deg, #4caf50, #2e7d32);
+            color: white;
+            border: 2px solid #81c784;
+        }
+        
+        .typhoon-level.warning {
+            background: linear-gradient(135deg, #ff9800, #f57c00);
+            color: white;
+            border: 2px solid #ffb74d;
+            animation: pulse-orange 1s infinite;
+        }
+        
+        .typhoon-level.danger {
+            background: linear-gradient(135deg, #f44336, #c62828);
+            color: white;
+            border: 2px solid #e57373;
+            animation: pulse-red 0.5s infinite;
+        }
+        
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 5px #f44336, 0 0 10px #f44336; }
+            50% { box-shadow: 0 0 20px #f44336, 0 0 40px #f44336, 0 0 60px #f44336; }
+        }
+        
+        @keyframes pulse-orange {
+            0%, 100% { box-shadow: 0 0 5px #ff9800, 0 0 10px #ff9800; }
+            50% { box-shadow: 0 0 15px #ff9800, 0 0 30px #ff9800; }
+        }
+        
+        .data-section {
+            background: rgba(30, 50, 80, 0.6);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(100, 180, 255, 0.2);
+        }
+        
+        .section-title {
+            font-size: 14px;
+            color: #90caf9;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(100, 180, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+        
+        .data-row:last-child {
+            border-bottom: none;
+        }
+        
+        .data-row.highlight {
+            background: rgba(79, 195, 247, 0.2);
+            border-radius: 8px;
+            padding: 8px 10px;
+            margin: 0 -10px;
+        }
+        
+        .data-label {
+            color: #b0bec5;
+            font-size: 14px;
+        }
+        
+        .data-value {
+            color: #fff;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .data-value.warning {
+            color: #ff9800;
+        }
+        
+        .data-value.danger {
+            color: #f44336;
+        }
+        
+        .timeline-section {
+            margin-top: 20px;
+        }
+        
+        .timeline-title {
+            font-size: 16px;
+            color: #4fc3f7;
+            margin-bottom: 15px;
+        }
+        
+        .timeline-container {
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        
+        .timeline-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: rgba(30, 50, 80, 0.4);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        
+        .timeline-item:hover {
+            background: rgba(79, 195, 247, 0.2);
+        }
+        
+        .timeline-item.active {
+            background: rgba(79, 195, 247, 0.3);
+            border-color: #4fc3f7;
+        }
+        
+        .timeline-item.highlight {
+            background: rgba(255, 152, 0, 0.3);
+            border-color: #ff9800;
+        }
+        
+        .timeline-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4fc3f7;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+        
+        .timeline-item.warning .timeline-dot {
+            background: #ff9800;
+        }
+        
+        .timeline-item.danger .timeline-dot {
+            background: #f44336;
+            animation: blink 0.5s infinite;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        .timeline-time {
+            color: #90caf9;
+            font-size: 13px;
+            margin-right: 10px;
+            min-width: 65px;
+        }
+        
+        .timeline-wind {
+            color: #fff;
+            font-size: 13px;
+        }
+        
+        .legend {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(30, 50, 80, 0.6);
+            border-radius: 12px;
+        }
+        
+        .legend-title {
+            color: #90caf9;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: #b0bec5;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 4px;
+            margin-right: 10px;
+            border-radius: 2px;
         }
     </style>
 </head>
 <body>
-    <div id="ui" class="ui-overlay">
-        <div>Use mouse to rotate/zoom</div>
-        <div>Keys 1-5: Change Wind Intensity</div>
+    <div class="container">
+        <div class="scene-container">
+            <div id="canvas-container"></div>
+            <div class="current-info">
+                <div class="label">当前时间</div>
+                <div class="value" id="current-time">--:--</div>
+                <div class="label" style="margin-top: 10px;">风速</div>
+                <div class="value" id="current-wind">-- m/s</div>
+            </div>
+            <div class="ui-overlay">
+                <p>🖱️ 左键拖动：旋转视角</p>
+                <p>🖱️ 滚轮：缩放</p>
+                <p>🖱️ 悬停路径节点：查看详细数据</p>
+                <p>⌨️ 按键 1-5：改变风力强度</p>
+            </div>
+        </div>
+        
+        <div class="data-panel">
+            <div class="panel-title">台风数据监测</div>
+            <div class="typhoon-name">超强台风 "海燕"</div>
+            <div class="typhoon-level normal" id="typhoon-level">超强台风</div>
+            
+            <div class="data-section">
+                <div class="section-title">实时数据</div>
+                <div class="data-row">
+                    <span class="data-label">中心气压</span>
+                    <span class="data-value" id="pressure">895 hPa</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">最大风速</span>
+                    <span class="data-value" id="wind-speed">75 m/s</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">移动速度</span>
+                    <span class="data-value" id="move-speed">25 km/h</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">移动方向</span>
+                    <span class="data-value" id="direction">西北偏西</span>
+                </div>
+            </div>
+            
+            <div class="data-section">
+                <div class="section-title">位置信息</div>
+                <div class="data-row">
+                    <span class="data-label">纬度</span>
+                    <span class="data-value" id="latitude">18.5°N</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">经度</span>
+                    <span class="data-value" id="longitude">125.3°E</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">七级风圈半径</span>
+                    <span class="data-value" id="radius-7">380 km</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">十级风圈半径</span>
+                    <span class="data-value" id="radius-10">150 km</span>
+                </div>
+            </div>
+            
+            <div class="timeline-section">
+                <div class="timeline-title">历史路径时间线</div>
+                <div class="timeline-container" id="timeline-container"></div>
+            </div>
+            
+            <div class="legend">
+                <div class="legend-title">图例说明</div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: linear-gradient(90deg, #4fc3f7, #2196f3);"></div>
+                    <span>台风路径</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ff9800;"></div>
+                    <span>路径节点</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f44336;"></div>
+                    <span>预警区域</span>
+                </div>
+            </div>
+        </div>
     </div>
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
     ( function () {
@@ -1082,6 +1443,26 @@
 } )();
     </script>
     <script>
+        const typhoonData = [
+            { time: "11-04 08:00", lat: 12.5, lon: 130.2, pressure: 998, windSpeed: 18, moveSpeed: 20, direction: "西北", radius7: 200, radius10: 50 },
+            { time: "11-04 14:00", lat: 13.2, lon: 129.5, pressure: 990, windSpeed: 25, moveSpeed: 22, direction: "西北", radius7: 220, radius10: 60 },
+            { time: "11-04 20:00", lat: 14.0, lon: 128.8, pressure: 980, windSpeed: 33, moveSpeed: 23, direction: "西北偏西", radius7: 250, radius10: 80 },
+            { time: "11-05 02:00", lat: 14.8, lon: 128.0, pressure: 970, windSpeed: 40, moveSpeed: 24, direction: "西北偏西", radius7: 280, radius10: 100 },
+            { time: "11-05 08:00", lat: 15.5, lon: 127.2, pressure: 960, windSpeed: 45, moveSpeed: 25, direction: "西北偏西", radius7: 300, radius10: 110 },
+            { time: "11-05 14:00", lat: 16.3, lon: 126.5, pressure: 945, windSpeed: 52, moveSpeed: 25, direction: "西北偏西", radius7: 320, radius10: 120 },
+            { time: "11-05 20:00", lat: 17.0, lon: 125.8, pressure: 930, windSpeed: 58, moveSpeed: 26, direction: "西北偏西", radius7: 340, radius10: 130 },
+            { time: "11-06 02:00", lat: 17.6, lon: 125.0, pressure: 915, windSpeed: 62, moveSpeed: 26, direction: "西北偏西", radius7: 350, radius10: 140 },
+            { time: "11-06 08:00", lat: 18.2, lon: 124.3, pressure: 905, windSpeed: 68, moveSpeed: 27, direction: "西北偏西", radius7: 360, radius10: 145 },
+            { time: "11-06 14:00", lat: 18.8, lon: 123.5, pressure: 895, windSpeed: 75, moveSpeed: 28, direction: "西北偏西", radius7: 380, radius10: 150 },
+            { time: "11-06 20:00", lat: 19.5, lon: 122.8, pressure: 890, windSpeed: 78, moveSpeed: 30, direction: "西北", radius7: 400, radius10: 160 },
+            { time: "11-07 02:00", lat: 20.2, lon: 122.0, pressure: 888, windSpeed: 80, moveSpeed: 30, direction: "西北", radius7: 420, radius10: 170 },
+            { time: "11-07 08:00", lat: 21.0, lon: 121.2, pressure: 895, windSpeed: 75, moveSpeed: 28, direction: "西北", radius7: 400, radius10: 155 },
+            { time: "11-07 14:00", lat: 21.8, lon: 120.5, pressure: 910, windSpeed: 65, moveSpeed: 25, direction: "西北偏北", radius7: 350, radius10: 130 },
+            { time: "11-07 20:00", lat: 22.5, lon: 119.8, pressure: 925, windSpeed: 55, moveSpeed: 22, direction: "北", radius7: 300, radius10: 100 },
+        ];
+
+        const WIND_SPEED_THRESHOLD = 50;
+        const PRESSURE_THRESHOLD = 950;
 
         class TyphoonVisualization {
             constructor() {
@@ -1098,12 +1479,24 @@
                 this.particleCount = 35000;
                 this.windParticleCount = 500;
                 this.animationSpeed = 0.001;
+                
+                this.pathNodes = [];
+                this.warningRing = null;
+                this.raycaster = null;
+                this.mouse = null;
+                this.hoveredNode = null;
+                this.currentIndex = 9;
 
                 this.initialize();
+                this.populateTimeline();
+                this.selectNode(this.currentIndex);
                 this.animate();
             }
 
             initialize() {
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+                
                 this.setupScene();
                 this.setupLights();
                 this.createOcean();
@@ -1111,6 +1504,7 @@
                 this.createTyphoon();
                 this.createWindField();
                 this.createTyphoonPath();
+                this.createWarningRing();
 
                 this.setupEventListeners();
             }
@@ -1119,13 +1513,14 @@
                 this.scene = new THREE.Scene();
                 this.scene.fog = new THREE.Fog(0x0a0f1f, 100, 1000);
 
-                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+                const container = document.getElementById('canvas-container');
+                this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 2000);
                 this.camera.position.set(30, 20, 30);
 
                 this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
                 this.renderer.setPixelRatio(window.devicePixelRatio);
-                document.body.appendChild(this.renderer.domElement);
+                container.appendChild(this.renderer.domElement);
 
                 this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
                 this.controls.enableDamping = true;
@@ -1293,21 +1688,19 @@
 
             createTyphoonPath() {
                 const pathPoints = [];
-                for (let i = 0; i < 50; i++) {
-                    const angle = (i / 50) * Math.PI * 1.5;
-                    const radius = 20 * (1 - i / 50);
-                    pathPoints.push(
-                        new THREE.Vector3(
-                            Math.cos(angle) * radius - i * 0.5,
-                            0,
-                            Math.sin(angle) * radius * 0.5 + i * 0.3
-                        )
-                    );
-                }
+                
+                typhoonData.forEach((data) => {
+                    const x = (data.lon - 125) * 2;
+                    const z = (data.lat - 18) * 2;
+                    pathPoints.push(new THREE.Vector3(x, 0.5, z));
+                });
 
-                const geometry = new THREE.BufferGeometry().setFromPoints(pathPoints);
+                const curve = new THREE.CatmullRomCurve3(pathPoints);
+                const points = curve.getPoints(200);
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                
                 const material = new THREE.LineBasicMaterial({
-                    color: 0xffaa00,
+                    color: 0x4fc3f7,
                     transparent: true,
                     opacity: 0.8
                 });
@@ -1315,19 +1708,77 @@
                 this.typhoonPath = new THREE.Line(geometry, material);
                 this.scene.add(this.typhoonPath);
 
-                for (let i = 0; i < pathPoints.length; i += 5) {
-                    const marker = new THREE.Mesh(
-                        new THREE.SphereGeometry(0.2, 8, 8),
-                        new THREE.MeshBasicMaterial({ color: 0xff6600 })
-                    );
-                    marker.position.copy(pathPoints[i]);
-                    this.scene.add(marker);
-                }
+                typhoonData.forEach((data, index) => {
+                    const x = (data.lon - 125) * 2;
+                    const z = (data.lat - 18) * 2;
+                    
+                    const nodeGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+                    let nodeColor = 0xff9800;
+                    
+                    if (data.windSpeed >= WIND_SPEED_THRESHOLD || data.pressure <= PRESSURE_THRESHOLD) {
+                        nodeColor = 0xf44336;
+                    }
+                    
+                    const nodeMaterial = new THREE.MeshBasicMaterial({
+                        color: nodeColor,
+                        transparent: true,
+                        opacity: 0.9
+                    });
+                    
+                    const node = new THREE.Mesh(nodeGeometry, nodeMaterial);
+                    node.position.set(x, 0.5, z);
+                    node.userData = { index: index, data: data };
+                    
+                    this.scene.add(node);
+                    this.pathNodes.push(node);
+                });
+            }
+            
+            createWarningRing() {
+                const ringGeometry = new THREE.RingGeometry(28, 32, 64);
+                const ringMaterial = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uTime: { value: 0 },
+                        uOpacity: { value: 0 }
+                    },
+                    vertexShader: `
+                        varying vec2 vUv;
+                        void main() {
+                            vUv = uv;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform float uTime;
+                        uniform float uOpacity;
+                        varying vec2 vUv;
+                        
+                        void main() {
+                            float pulse = sin(uTime * 4.0) * 0.5 + 0.5;
+                            float ring = sin(vUv.x * 50.0 + uTime * 5.0) * 0.5 + 0.5;
+                            vec3 color = vec3(1.0, 0.2, 0.2);
+                            float alpha = (pulse * 0.5 + ring * 0.5) * uOpacity;
+                            gl_FragColor = vec4(color, alpha);
+                        }
+                    `,
+                    transparent: true,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
+                });
+                
+                this.warningRing = new THREE.Mesh(ringGeometry, ringMaterial);
+                this.warningRing.rotation.x = -Math.PI / 2;
+                this.warningRing.position.y = 0.2;
+                this.scene.add(this.warningRing);
             }
 
             update() {
                 const time = Date.now() * this.animationSpeed;
                 this.typhoonParticles.rotation.y += this.animationSpeed * 0.5;
+                
+                if (this.warningRing && this.warningRing.material.uniforms) {
+                    this.warningRing.material.uniforms.uTime.value = time * 1000;
+                }
 
                 const typhoonPositions = this.typhoonParticles.geometry.attributes.position;
                 for (let i = 0; i < typhoonPositions.count; i++) {
@@ -1373,10 +1824,12 @@
             }
 
             setupEventListeners() {
+                const container = document.getElementById('canvas-container');
+                
                 window.addEventListener('resize', () => {
-                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.aspect = container.clientWidth / container.clientHeight;
                     this.camera.updateProjectionMatrix();
-                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                    this.renderer.setSize(container.clientWidth, container.clientHeight);
                 });
 
                 window.addEventListener('keydown', (event) => {
@@ -1385,6 +1838,186 @@
                         this.windIntensity = key;
                     }
                 });
+                
+                this.renderer.domElement.addEventListener('mousemove', (event) => this.onMouseMove(event));
+            }
+            
+            onMouseMove(event) {
+                const container = document.getElementById('canvas-container');
+                const rect = container.getBoundingClientRect();
+                
+                this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const intersects = this.raycaster.intersectObjects(this.pathNodes);
+                
+                if (intersects.length > 0) {
+                    const node = intersects[0].object;
+                    
+                    if (this.hoveredNode !== node) {
+                        if (this.hoveredNode) {
+                            this.hoveredNode.scale.set(1, 1, 1);
+                        }
+                        
+                        this.hoveredNode = node;
+                        this.hoveredNode.scale.set(1.5, 1.5, 1.5);
+                        
+                        const index = node.userData.index;
+                        this.highlightTimelineItem(index);
+                        this.updateDataPanel(node.userData.data);
+                    }
+                    
+                    this.renderer.domElement.style.cursor = 'pointer';
+                } else {
+                    if (this.hoveredNode) {
+                        this.hoveredNode.scale.set(1, 1, 1);
+                        this.hoveredNode = null;
+                        this.clearTimelineHighlight();
+                        this.updateDataPanel(typhoonData[this.currentIndex]);
+                    }
+                    this.renderer.domElement.style.cursor = 'default';
+                }
+            }
+            
+            populateTimeline() {
+                const container = document.getElementById('timeline-container');
+                container.innerHTML = '';
+                
+                typhoonData.forEach((data, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'timeline-item';
+                    
+                    if (data.windSpeed >= WIND_SPEED_THRESHOLD || data.pressure <= PRESSURE_THRESHOLD) {
+                        item.classList.add(data.windSpeed >= 65 ? 'danger' : 'warning');
+                    }
+                    
+                    item.innerHTML = `
+                        <div class="timeline-dot"></div>
+                        <span class="timeline-time">${data.time}</span>
+                        <span class="timeline-wind">${data.windSpeed} m/s</span>
+                    `;
+                    
+                    item.addEventListener('click', () => {
+                        this.selectNode(index);
+                    });
+                    
+                    container.appendChild(item);
+                });
+            }
+            
+            selectNode(index) {
+                this.currentIndex = index;
+                const data = typhoonData[index];
+                
+                this.updateDataPanel(data);
+                this.updateTimelineHighlight(index);
+                
+                const x = (data.lon - 125) * 2;
+                const z = (data.lat - 18) * 2;
+                this.typhoonParticles.position.set(x, 0, z);
+                this.windParticles.position.set(x, 0, z);
+                
+                this.checkWarning(data);
+            }
+            
+            updateDataPanel(data) {
+                document.getElementById('current-time').textContent = data.time;
+                document.getElementById('current-wind').textContent = data.windSpeed + ' m/s';
+                document.getElementById('pressure').textContent = data.pressure + ' hPa';
+                document.getElementById('wind-speed').textContent = data.windSpeed + ' m/s';
+                document.getElementById('move-speed').textContent = data.moveSpeed + ' km/h';
+                document.getElementById('direction').textContent = data.direction;
+                document.getElementById('latitude').textContent = data.lat.toFixed(1) + '°N';
+                document.getElementById('longitude').textContent = data.lon.toFixed(1) + '°E';
+                document.getElementById('radius-7').textContent = data.radius7 + ' km';
+                document.getElementById('radius-10').textContent = data.radius10 + ' km';
+                
+                const windSpeedEl = document.getElementById('wind-speed');
+                const pressureEl = document.getElementById('pressure');
+                
+                windSpeedEl.classList.remove('warning', 'danger');
+                pressureEl.classList.remove('warning', 'danger');
+                
+                if (data.windSpeed >= WIND_SPEED_THRESHOLD) {
+                    windSpeedEl.classList.add(data.windSpeed >= 65 ? 'danger' : 'warning');
+                }
+                if (data.pressure <= PRESSURE_THRESHOLD) {
+                    pressureEl.classList.add(data.pressure <= 920 ? 'danger' : 'warning');
+                }
+                
+                this.updateTyphoonLevel(data.windSpeed);
+            }
+            
+            updateTyphoonLevel(windSpeed) {
+                const levelEl = document.getElementById('typhoon-level');
+                levelEl.classList.remove('normal', 'warning', 'danger');
+                
+                let level, className;
+                
+                if (windSpeed >= 75) {
+                    level = '超强台风';
+                    className = 'danger';
+                } else if (windSpeed >= 60) {
+                    level = '强台风';
+                    className = 'danger';
+                } else if (windSpeed >= 45) {
+                    level = '台风';
+                    className = 'warning';
+                } else if (windSpeed >= 35) {
+                    level = '强热带风暴';
+                    className = 'warning';
+                } else if (windSpeed >= 25) {
+                    level = '热带风暴';
+                    className = 'normal';
+                } else {
+                    level = '热带低压';
+                    className = 'normal';
+                }
+                
+                levelEl.textContent = level;
+                levelEl.classList.add(className);
+            }
+            
+            updateTimelineHighlight(index) {
+                const items = document.querySelectorAll('.timeline-item');
+                items.forEach((item, i) => {
+                    item.classList.remove('active', 'highlight');
+                    if (i === index) {
+                        item.classList.add('active');
+                    }
+                });
+            }
+            
+            highlightTimelineItem(index) {
+                const items = document.querySelectorAll('.timeline-item');
+                items.forEach((item, i) => {
+                    item.classList.remove('highlight');
+                    if (i === index) {
+                        item.classList.add('highlight');
+                        item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                });
+            }
+            
+            clearTimelineHighlight() {
+                const items = document.querySelectorAll('.timeline-item');
+                items.forEach((item, i) => {
+                    item.classList.remove('highlight');
+                    if (i === this.currentIndex) {
+                        item.classList.add('active');
+                    }
+                });
+            }
+            
+            checkWarning(data) {
+                const isWarning = data.windSpeed >= WIND_SPEED_THRESHOLD || data.pressure <= PRESSURE_THRESHOLD;
+                
+                if (isWarning) {
+                    this.warningRing.material.uniforms.uOpacity.value = 0.8;
+                } else {
+                    this.warningRing.material.uniforms.uOpacity.value = 0;
+                }
             }
         }
 

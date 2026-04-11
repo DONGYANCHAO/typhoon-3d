@@ -2,46 +2,324 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Interactive 3D Typhoon Path Visualization</title>
+    <title>3D 台风路径模拟器</title>
     <style>
-        html, body {
+        * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
             height: 100%;
             width: 100%;
+            font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
             background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
             overflow: hidden;
-            font-family: Arial, sans-serif;
         }
-        canvas {
-            display: block;
+
+        .container {
+            display: flex;
+            width: 100%;
+            height: 100vh;
         }
-        .ui-overlay {
-            position: absolute;
-            top: 20px;
-            left: 20px;
+
+        .scene-container {
+            flex: 1;
+            position: relative;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        .data-panel {
+            width: 380px;
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.98) 100%);
+            border-left: 2px solid rgba(74, 144, 226, 0.3);
+            padding: 20px;
+            overflow-y: auto;
+            color: #e2e8f0;
+        }
+
+        .panel-header {
+            text-align: center;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(74, 144, 226, 0.3);
+            margin-bottom: 20px;
+        }
+
+        .panel-header h1 {
+            font-size: 22px;
+            color: #4a90e2;
+            margin-bottom: 5px;
+        }
+
+        .panel-header .subtitle {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .typhoon-info {
+            background: rgba(30, 58, 95, 0.4);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .typhoon-name {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .typhoon-name h2 {
+            font-size: 20px;
+            color: #f59e0b;
+        }
+
+        .level-badge {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            transition: all 0.3s ease;
+        }
+
+        .level-normal {
+            background: linear-gradient(135deg, #10b981, #059669);
             color: white;
-            background-color: rgba(0, 0, 0, 0.7);
-            padding: 10px;
+        }
+
+        .level-warning {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+        }
+
+        .level-danger {
+            background: linear-gradient(135deg, #ff2200, #cc0000);
+            color: white;
+            animation: danger-pulse 0.4s ease-in-out infinite;
+            display: inline-block;
+            will-change: box-shadow;
+        }
+
+        @keyframes danger-pulse {
+            0%, 100% {
+                border: 3px solid #ff0000;
+                box-shadow: 0 0 10px #ff0000, 0 0 20px rgba(255, 0, 0, 0.8), 0 0 30px rgba(255, 51, 0, 0.6), inset 0 0 10px rgba(255, 255, 0, 0.3);
+            }
+            25% {
+                border: 3px solid #ff4400;
+                box-shadow: 0 0 15px #ff4400, 0 0 25px rgba(255, 34, 0, 0.9), 0 0 40px rgba(255, 0, 0, 0.7), inset 0 0 15px rgba(255, 255, 0, 0.5);
+            }
+            50% {
+                border: 4px solid #ffff00;
+                box-shadow: 0 0 20px #ffff00, 0 0 35px rgba(255, 102, 0, 1), 0 0 60px rgba(255, 0, 0, 0.9), inset 0 0 20px rgba(255, 255, 255, 0.6);
+            }
+            75% {
+                border: 3px solid #ff4400;
+                box-shadow: 0 0 15px #ff4400, 0 0 25px rgba(255, 34, 0, 0.9), 0 0 40px rgba(255, 0, 0, 0.7), inset 0 0 15px rgba(255, 255, 0, 0.5);
+            }
+        }
+
+        .data-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .data-item {
+            background: rgba(0, 0, 0, 0.3);
             border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .data-label {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-bottom: 5px;
+        }
+
+        .data-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #4a90e2;
+        }
+
+        .data-value.danger {
+            color: #ef4444;
+            animation: text-pulse 0.8s ease-in-out infinite;
+        }
+
+        @keyframes text-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .path-history {
+            margin-top: 20px;
+        }
+
+        .path-history h3 {
             font-size: 14px;
+            color: #94a3b8;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .path-history h3::before {
+            content: '';
+            width: 4px;
+            height: 16px;
+            background: linear-gradient(180deg, #ff6600, #ffaa00);
+            border-radius: 2px;
+        }
+
+        .history-list {
+            max-height: 350px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        .history-item {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .history-item:hover {
+            background: rgba(74, 144, 226, 0.2);
+            transform: translateX(3px);
+        }
+
+        .history-item.highlighted {
+            background: rgba(255, 106, 0, 0.3);
+            border-color: #ff6600;
+            box-shadow: 0 0 15px rgba(255, 102, 0, 0.5);
+            transform: scale(1.02);
+        }
+
+        .history-time {
+            font-size: 12px;
+            color: #ffaa00;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .history-details {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+        }
+
+        .history-details span {
+            color: #94a3b8;
+        }
+
+        .history-details strong {
+            color: #e2e8f0;
+        }
+
+        .instructions {
+            margin-top: 20px;
+            padding: 12px;
+            background: rgba(74, 144, 226, 0.1);
+            border-radius: 8px;
+            border-left: 3px solid #4a90e2;
+        }
+
+        .instructions p {
+            font-size: 11px;
+            color: #94a3b8;
+            line-height: 1.6;
+        }
+
+        .instructions strong {
+            color: #4a90e2;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4a90e2;
+            border-radius: 3px;
         }
     </style>
 </head>
 <body>
-    <div id="ui" class="ui-overlay">
-        <div>Use mouse to rotate/zoom</div>
-        <div>Keys 1-5: Change Wind Intensity</div>
+    <div class="container">
+        <div class="scene-container" id="canvas-container"></div>
+        
+        <div class="data-panel">
+            <div class="panel-header">
+                <h1>🌀 台风路径模拟器</h1>
+                <div class="subtitle">Interactive 3D Typhoon Visualization</div>
+            </div>
+
+            <div class="typhoon-info">
+                <div class="typhoon-name">
+                    <h2>台风 MAWAR</h2>
+                    <span class="level-badge level-normal" id="level-badge">强台风</span>
+                </div>
+                
+                <div class="data-grid">
+                    <div class="data-item">
+                        <div class="data-label">中心风速</div>
+                        <div class="data-value" id="wind-speed">42 m/s</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">中心气压</div>
+                        <div class="data-value" id="pressure">955 hPa</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">移动速度</div>
+                        <div class="data-value">15 km/h</div>
+                    </div>
+                    <div class="data-item">
+                        <div class="data-label">7级风圈半径</div>
+                        <div class="data-value">350 km</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="path-history">
+                <h3>历史路径数据</h3>
+                <div class="history-list" id="history-list">
+                </div>
+            </div>
+
+            <div class="instructions">
+                <p>
+                    <strong>操作说明：</strong><br>
+                    • 鼠标左键拖动：旋转视角<br>
+                    • 鼠标滚轮：缩放场景<br>
+                    • 鼠标右键拖动：平移场景<br>
+                    • 悬停路径节点：高亮对应数据
+                </p>
+            </div>
+        </div>
     </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
     ( function () {
-
-	// Unlike TrackballControls, it maintains the "up" direction object.up (+Y by default).
-	//
-	//    Orbit - left mouse / touch: one-finger move
-	//    Zoom - middle mouse, or mousewheel / touch: two-finger spread or squish
-	//    Pan - right mouse, or left mouse + ctrl/meta/shiftKey, or arrow keys / touch: two-finger move
 
 	const _changeEvent = {
 		type: 'change'
@@ -61,78 +339,65 @@
 			if ( domElement === undefined ) console.warn( 'THREE.OrbitControls: The second parameter "domElement" is now mandatory.' );
 			if ( domElement === document ) console.error( 'THREE.OrbitControls: "document" should not be used as the target "domElement". Please use "renderer.domElement" instead.' );
 			this.object = object;
-			this.domElement = domElement; // Set to false to disable this control
+			this.domElement = domElement;
 
-			this.enabled = true; // "target" sets the location of focus, where the object orbits around
+			this.enabled = true;
 
-			this.target = new THREE.Vector3(); // How far you can dolly in and out ( PerspectiveCamera only )
+			this.target = new THREE.Vector3();
 
 			this.minDistance = 0;
-			this.maxDistance = Infinity; // How far you can zoom in and out ( OrthographicCamera only )
+			this.maxDistance = Infinity;
 
 			this.minZoom = 0;
-			this.maxZoom = Infinity; // How far you can orbit vertically, upper and lower limits.
-			// Range is 0 to Math.PI radians.
+			this.maxZoom = Infinity;
 
-			this.minPolarAngle = 0; // radians
+			this.minPolarAngle = 0;
+			this.maxPolarAngle = Math.PI;
 
-			this.maxPolarAngle = Math.PI; // radians
-			// How far you can orbit horizontally, upper and lower limits.
-			// If set, the interval [ min, max ] must be a sub-interval of [ - 2 PI, 2 PI ], with ( max - min < 2 PI )
-
-			this.minAzimuthAngle = - Infinity; // radians
-
-			this.maxAzimuthAngle = Infinity; // radians
-			// Set to true to enable damping (inertia)
-			// If damping is enabled, you must call controls.update() in your animation loop
+			this.minAzimuthAngle = - Infinity;
+			this.maxAzimuthAngle = Infinity;
 
 			this.enableDamping = false;
-			this.dampingFactor = 0.05; // This option actually enables dollying in and out; left as "zoom" for backwards compatibility.
-			// Set to false to disable zooming
+			this.dampingFactor = 0.05;
 
 			this.enableZoom = true;
-			this.zoomSpeed = 1.0; // Set to false to disable rotating
+			this.zoomSpeed = 1.0;
 
 			this.enableRotate = true;
-			this.rotateSpeed = 1.0; // Set to false to disable panning
+			this.rotateSpeed = 1.0;
 
 			this.enablePan = true;
 			this.panSpeed = 1.0;
-			this.screenSpacePanning = true; // if false, pan orthogonal to world-space direction camera.up
+			this.screenSpacePanning = true;
 
-			this.keyPanSpeed = 7.0; // pixels moved per arrow key push
-			// Set to true to automatically rotate around the target
-			// If auto-rotate is enabled, you must call controls.update() in your animation loop
+			this.keyPanSpeed = 7.0;
 
 			this.autoRotate = false;
-			this.autoRotateSpeed = 2.0; // 30 seconds per orbit when fps is 60
-			// The four arrow keys
+			this.autoRotateSpeed = 2.0;
 
 			this.keys = {
 				LEFT: 'ArrowLeft',
 				UP: 'ArrowUp',
 				RIGHT: 'ArrowRight',
 				BOTTOM: 'ArrowDown'
-			}; // Mouse buttons
+			};
 
 			this.mouseButtons = {
 				LEFT: THREE.MOUSE.ROTATE,
 				MIDDLE: THREE.MOUSE.DOLLY,
 				RIGHT: THREE.MOUSE.PAN
-			}; // Touch fingers
+			};
 
 			this.touches = {
 				ONE: THREE.TOUCH.ROTATE,
 				TWO: THREE.TOUCH.DOLLY_PAN
-			}; // for reset
+			};
 
 			this.target0 = this.target.clone();
 			this.position0 = this.object.position.clone();
-			this.zoom0 = this.object.zoom; // the target DOM element for key events
+			this.zoom0 = this.object.zoom;
 
-			this._domElementKeyEvents = null; //
-			// public methods
-			//
+			this._domElementKeyEvents = null;
 
 			this.getPolarAngle = function () {
 
@@ -171,12 +436,11 @@
 				scope.update();
 				state = STATE.NONE;
 
-			}; // this method is exposed, but perhaps it would be better if we can make it private...
-
+			};
 
 			this.update = function () {
 
-				const offset = new THREE.Vector3(); // so camera.up is the orbit axis
+				const offset = new THREE.Vector3();
 
 				const quat = new THREE.Quaternion().setFromUnitVectors( object.up, new THREE.Vector3( 0, 1, 0 ) );
 				const quatInverse = quat.clone().invert();
@@ -186,9 +450,9 @@
 				return function update() {
 
 					const position = scope.object.position;
-					offset.copy( position ).sub( scope.target ); // rotate offset to "y-axis-is-up" space
+					offset.copy( position ).sub( scope.target );
 
-					offset.applyQuaternion( quat ); // angle from z-axis around y-axis
+					offset.applyQuaternion( quat );
 
 					spherical.setFromVector3( offset );
 
@@ -208,8 +472,7 @@
 						spherical.theta += sphericalDelta.theta;
 						spherical.phi += sphericalDelta.phi;
 
-					} // restrict theta to be between desired limits
-
+					}
 
 					let min = scope.minAzimuthAngle;
 					let max = scope.maxAzimuthAngle;
@@ -229,14 +492,13 @@
 
 						}
 
-					} // restrict phi to be between desired limits
-
+					}
 
 					spherical.phi = Math.max( scope.minPolarAngle, Math.min( scope.maxPolarAngle, spherical.phi ) );
 					spherical.makeSafe();
-					spherical.radius *= scale; // restrict radius to be between desired limits
+					spherical.radius *= scale;
 
-					spherical.radius = Math.max( scope.minDistance, Math.min( scope.maxDistance, spherical.radius ) ); // move target to panned location
+					spherical.radius = Math.max( scope.minDistance, Math.min( scope.maxDistance, spherical.radius ) );
 
 					if ( scope.enableDamping === true ) {
 
@@ -248,7 +510,7 @@
 
 					}
 
-					offset.setFromSpherical( spherical ); // rotate offset back to "camera-up-vector-is-up" space
+					offset.setFromSpherical( spherical );
 
 					offset.applyQuaternion( quatInverse );
 					position.copy( scope.target ).add( offset );
@@ -267,9 +529,7 @@
 
 					}
 
-					scale = 1; // update condition is:
-					// min(camera displacement, camera rotation in radians)^2 > EPS
-					// using small-angle approximation cos(x/2) = 1 - x^2 / 8
+					scale = 1;
 
 					if ( zoomChanged || lastPosition.distanceToSquared( scope.object.position ) > EPS || 8 * ( 1 - lastQuaternion.dot( scope.object.quaternion ) ) > EPS ) {
 
@@ -302,12 +562,9 @@
 
 					scope._domElementKeyEvents.removeEventListener( 'keydown', onKeyDown );
 
-				} //scope.dispatchEvent( { type: 'dispose' } ); // should this be added here?
+				}
 
-			}; //
-			// internals
-			//
-
+			};
 
 			const scope = this;
 			const STATE = {
@@ -321,7 +578,7 @@
 				TOUCH_DOLLY_ROTATE: 6
 			};
 			let state = STATE.NONE;
-			const EPS = 0.000001; // current position in spherical coordinates
+			const EPS = 0.000001;
 
 			const spherical = new THREE.Spherical();
 			const sphericalDelta = new THREE.Spherical();
@@ -367,7 +624,7 @@
 				const v = new THREE.Vector3();
 				return function panLeft( distance, objectMatrix ) {
 
-					v.setFromMatrixColumn( objectMatrix, 0 ); // get X column of objectMatrix
+					v.setFromMatrixColumn( objectMatrix, 0 );
 
 					v.multiplyScalar( - distance );
 					panOffset.add( v );
@@ -397,8 +654,7 @@
 
 				};
 
-			}(); // deltaX and deltaY are in pixels; right and down are positive
-
+			}();
 
 			const pan = function () {
 
@@ -409,25 +665,22 @@
 
 					if ( scope.object.isPerspectiveCamera ) {
 
-						// perspective
 						const position = scope.object.position;
 						offset.copy( position ).sub( scope.target );
-						let targetDistance = offset.length(); // half of the fov is center to top of screen
+						let targetDistance = offset.length();
 
-						targetDistance *= Math.tan( scope.object.fov / 2 * Math.PI / 180.0 ); // we use only clientHeight here so aspect ratio does not distort speed
+						targetDistance *= Math.tan( scope.object.fov / 2 * Math.PI / 180.0 );
 
 						panLeft( 2 * deltaX * targetDistance / element.clientHeight, scope.object.matrix );
 						panUp( 2 * deltaY * targetDistance / element.clientHeight, scope.object.matrix );
 
 					} else if ( scope.object.isOrthographicCamera ) {
 
-						// orthographic
 						panLeft( deltaX * ( scope.object.right - scope.object.left ) / scope.object.zoom / element.clientWidth, scope.object.matrix );
 						panUp( deltaY * ( scope.object.top - scope.object.bottom ) / scope.object.zoom / element.clientHeight, scope.object.matrix );
 
 					} else {
 
-						// camera neither orthographic nor perspective
 						console.warn( 'WARNING: OrbitControls.js encountered an unknown camera type - pan disabled.' );
 						scope.enablePan = false;
 
@@ -477,10 +730,7 @@
 
 				}
 
-			} //
-			// event callbacks - update the object state
-			//
-
+			}
 
 			function handleMouseDownRotate( event ) {
 
@@ -505,7 +755,7 @@
 				rotateEnd.set( event.clientX, event.clientY );
 				rotateDelta.subVectors( rotateEnd, rotateStart ).multiplyScalar( scope.rotateSpeed );
 				const element = scope.domElement;
-				rotateLeft( 2 * Math.PI * rotateDelta.x / element.clientHeight ); // yes, height
+				rotateLeft( 2 * Math.PI * rotateDelta.x / element.clientHeight );
 
 				rotateUp( 2 * Math.PI * rotateDelta.y / element.clientHeight );
 				rotateStart.copy( rotateEnd );
@@ -543,7 +793,7 @@
 
 			}
 
-			function handleMouseUp( ) { // no-op
+			function handleMouseUp( ) {
 			}
 
 			function handleMouseWheel( event ) {
@@ -592,7 +842,6 @@
 
 				if ( needsUpdate ) {
 
-					// prevent the browser from scrolling on cursor keys
 					event.preventDefault();
 					scope.update();
 
@@ -671,7 +920,7 @@
 
 				rotateDelta.subVectors( rotateEnd, rotateStart ).multiplyScalar( scope.rotateSpeed );
 				const element = scope.domElement;
-				rotateLeft( 2 * Math.PI * rotateDelta.x / element.clientHeight ); // yes, height
+				rotateLeft( 2 * Math.PI * rotateDelta.x / element.clientHeight );
 
 				rotateUp( 2 * Math.PI * rotateDelta.y / element.clientHeight );
 				rotateStart.copy( rotateEnd );
@@ -724,11 +973,8 @@
 
 			}
 
-			function handleTouchEnd( ) { // no-op
-			} //
-			// event handlers - FSM: listen for events and reset state
-			//
-
+			function handleTouchEnd( ) {
+			}
 
 			function onPointerDown( event ) {
 
@@ -740,7 +986,6 @@
 					case 'pen':
 						onMouseDown( event );
 						break;
-        // TODO touch
 
 				}
 
@@ -756,7 +1001,6 @@
 					case 'pen':
 						onMouseMove( event );
 						break;
-        // TODO touch
 
 				}
 
@@ -770,7 +1014,6 @@
 					case 'pen':
 						onMouseUp( event );
 						break;
-        // TODO touch
 
 				}
 
@@ -778,9 +1021,7 @@
 
 			function onMouseDown( event ) {
 
-				// Prevent the browser from scrolling.
-				event.preventDefault(); // Manually set the focus since calling preventDefault above
-				// prevents the browser from setting it automatically.
+				event.preventDefault();
 
 				scope.domElement.focus ? scope.domElement.focus() : window.focus();
 				let mouseAction;
@@ -918,7 +1159,7 @@
 			function onTouchStart( event ) {
 
 				if ( scope.enabled === false ) return;
-				event.preventDefault(); // prevent scrolling
+				event.preventDefault();
 
 				switch ( event.touches.length ) {
 
@@ -982,7 +1223,7 @@
 			function onTouchMove( event ) {
 
 				if ( scope.enabled === false ) return;
-				event.preventDefault(); // prevent scrolling
+				event.preventDefault();
 
 				switch ( state ) {
 
@@ -1031,8 +1272,7 @@
 				if ( scope.enabled === false ) return;
 				event.preventDefault();
 
-			} //
-
+			}
 
 			scope.domElement.addEventListener( 'contextmenu', onContextMenu );
 			scope.domElement.addEventListener( 'pointerdown', onPointerDown );
@@ -1045,43 +1285,31 @@
 			scope.domElement.addEventListener( 'touchend', onTouchEnd );
 			scope.domElement.addEventListener( 'touchmove', onTouchMove, {
 				passive: false
-			} ); // force an update at start
+			} );
 
 			this.update();
 
 		}
 
-	} // This set of controls performs orbiting, dollying (zooming), and panning.
-	// Unlike TrackballControls, it maintains the "up" direction object.up (+Y by default).
-	// This is very similar to OrbitControls, another set of touch behavior
-	//
-	//    Orbit - right mouse, or left mouse + ctrl/meta/shiftKey / touch: two-finger rotate
-	//    Zoom - middle mouse, or mousewheel / touch: two-finger spread or squish
-	//    Pan - left mouse, or arrow keys / touch: one-finger move
-
-
-	class MapControls extends OrbitControls {
-
-		constructor( object, domElement ) {
-
-			super( object, domElement );
-			this.screenSpacePanning = false; // pan orthogonal to world-space direction camera.up
-
-			this.mouseButtons.LEFT = THREE.MOUSE.PAN;
-			this.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
-			this.touches.ONE = THREE.TOUCH.PAN;
-			this.touches.TWO = THREE.TOUCH.DOLLY_ROTATE;
-
-		}
-
 	}
 
-	THREE.MapControls = MapControls;
 	THREE.OrbitControls = OrbitControls;
 
 } )();
     </script>
     <script>
+        const typhoonHistoryData = [
+            { time: '05-20 08:00', windSpeed: 55, pressure: 930, level: '超强台风' },
+            { time: '05-20 02:00', windSpeed: 52, pressure: 935, level: '超强台风' },
+            { time: '05-19 20:00', windSpeed: 48, pressure: 940, level: '强台风' },
+            { time: '05-19 14:00', windSpeed: 45, pressure: 945, level: '强台风' },
+            { time: '05-19 08:00', windSpeed: 42, pressure: 950, level: '台风' },
+            { time: '05-19 02:00', windSpeed: 40, pressure: 955, level: '台风' },
+            { time: '05-18 20:00', windSpeed: 38, pressure: 960, level: '强热带风暴' },
+            { time: '05-18 14:00', windSpeed: 35, pressure: 965, level: '强热带风暴' },
+            { time: '05-18 08:00', windSpeed: 32, pressure: 970, level: '热带风暴' },
+            { time: '05-18 02:00', windSpeed: 28, pressure: 980, level: '热带风暴' }
+        ];
 
         class TyphoonVisualization {
             constructor() {
@@ -1089,15 +1317,24 @@
                 this.camera = null;
                 this.renderer = null;
                 this.controls = null;
+                this.raycaster = null;
+                this.mouse = null;
 
                 this.typhoonParticles = null;
                 this.windParticles = null;
                 this.typhoonPath = null;
+                this.pathMarkers = [];
+                this.warningRing = null;
                 this.windIntensity = 3;
 
                 this.particleCount = 35000;
                 this.windParticleCount = 500;
                 this.animationSpeed = 0.001;
+
+                this.WIND_SPEED_THRESHOLD = 50;
+                this.PRESSURE_THRESHOLD = 940;
+                this.isWarningActive = false;
+                this.currentDataIndex = 0;
 
                 this.initialize();
                 this.animate();
@@ -1111,21 +1348,28 @@
                 this.createTyphoon();
                 this.createWindField();
                 this.createTyphoonPath();
-
+                this.createWarningRing();
+                this.setupRaycaster();
+                this.populateHistoryPanel();
                 this.setupEventListeners();
+                this.checkWarningStatus();
             }
 
             setupScene() {
+                const container = document.getElementById('canvas-container');
+                const width = container.clientWidth;
+                const height = container.clientHeight;
+
                 this.scene = new THREE.Scene();
                 this.scene.fog = new THREE.Fog(0x0a0f1f, 100, 1000);
 
-                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+                this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 2000);
                 this.camera.position.set(30, 20, 30);
 
                 this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setSize(width, height);
                 this.renderer.setPixelRatio(window.devicePixelRatio);
-                document.body.appendChild(this.renderer.domElement);
+                container.appendChild(this.renderer.domElement);
 
                 this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
                 this.controls.enableDamping = true;
@@ -1293,16 +1537,15 @@
 
             createTyphoonPath() {
                 const pathPoints = [];
-                for (let i = 0; i < 50; i++) {
-                    const angle = (i / 50) * Math.PI * 1.5;
-                    const radius = 20 * (1 - i / 50);
-                    pathPoints.push(
-                        new THREE.Vector3(
-                            Math.cos(angle) * radius - i * 0.5,
-                            0,
-                            Math.sin(angle) * radius * 0.5 + i * 0.3
-                        )
-                    );
+                const markerCount = typhoonHistoryData.length;
+
+                for (let i = 0; i < markerCount; i++) {
+                    const angle = (i / markerCount) * Math.PI * 1.2;
+                    const radius = 18 * (1 - i / markerCount * 0.5);
+                    const x = Math.cos(angle) * radius - i * 0.8;
+                    const z = Math.sin(angle) * radius * 0.5 + i * 0.5;
+                    
+                    pathPoints.push(new THREE.Vector3(x, 0, z));
                 }
 
                 const geometry = new THREE.BufferGeometry().setFromPoints(pathPoints);
@@ -1315,19 +1558,205 @@
                 this.typhoonPath = new THREE.Line(geometry, material);
                 this.scene.add(this.typhoonPath);
 
-                for (let i = 0; i < pathPoints.length; i += 5) {
-                    const marker = new THREE.Mesh(
-                        new THREE.SphereGeometry(0.2, 8, 8),
-                        new THREE.MeshBasicMaterial({ color: 0xff6600 })
-                    );
+                for (let i = 0; i < pathPoints.length; i++) {
+                    const markerGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+                    const markerMaterial = new THREE.MeshBasicMaterial({ 
+                        color: 0xff6600
+                    });
+                    const marker = new THREE.Mesh(markerGeometry, markerMaterial);
                     marker.position.copy(pathPoints[i]);
+                    marker.userData = { index: i, data: typhoonHistoryData[i] };
+                    this.pathMarkers.push(marker);
                     this.scene.add(marker);
+                }
+            }
+
+            createWarningRing() {
+                this.warningRings = [];
+                const ringRadii = [22, 30, 38];
+                
+                ringRadii.forEach((radius, index) => {
+                    const geometry = new THREE.TorusGeometry(radius, 1.5, 32, 128);
+                    const material = new THREE.ShaderMaterial({
+                        uniforms: {
+                            time: { value: 0.0 },
+                            active: { value: 0.0 },
+                            ringIndex: { value: index }
+                        },
+                        vertexShader: `
+                            varying vec3 vNormal;
+                            void main() {
+                                vNormal = normalize(normalMatrix * normal);
+                                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                            }
+                        `,
+                        fragmentShader: `
+                            uniform float time;
+                            uniform float active;
+                            uniform float ringIndex;
+                            varying vec3 vNormal;
+                            
+                            void main() {
+                                if (active < 0.5) discard;
+                                
+                                float pulsePhase = ringIndex * 1.5;
+                                float pulse = 0.4 + 0.6 * sin(time * 4.0 + pulsePhase);
+                                
+                                float edgeGlow = pow(abs(vNormal.y), 0.3);
+                                
+                                vec3 ringColor = mix(
+                                    vec3(1.0, 0.2, 0.0),
+                                    vec3(1.0, 0.9, 0.0),
+                                    0.5 + 0.5 * sin(time * 3.0 + ringIndex)
+                                );
+                                
+                                float alpha = edgeGlow * pulse;
+                                
+                                gl_FragColor = vec4(ringColor * 2.0, alpha * 0.9);
+                            }
+                        `,
+                        transparent: true,
+                        blending: THREE.AdditiveBlending,
+                        side: THREE.DoubleSide,
+                        depthWrite: false
+                    });
+
+                    const ring = new THREE.Mesh(geometry, material);
+                    ring.rotation.x = Math.PI / 2;
+                    ring.position.y = 0.5;
+                    this.warningRings.push(ring);
+                    this.scene.add(ring);
+                });
+            }
+
+            setupRaycaster() {
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+            }
+
+            populateHistoryPanel() {
+                const historyList = document.getElementById('history-list');
+                historyList.innerHTML = '';
+
+                typhoonHistoryData.forEach((data, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'history-item';
+                    item.id = `history-item-${index}`;
+                    item.innerHTML = `
+                        <div class="history-time">${data.time}</div>
+                        <div class="history-details">
+                            <span>风速: <strong>${data.windSpeed} m/s</strong></span>
+                            <span>气压: <strong>${data.pressure} hPa</strong></span>
+                        </div>
+                    `;
+                    historyList.appendChild(item);
+                });
+            }
+
+            checkWarningStatus() {
+                const currentData = typhoonHistoryData[this.currentDataIndex];
+                const shouldWarn = currentData.windSpeed >= this.WIND_SPEED_THRESHOLD || 
+                                   currentData.pressure <= this.PRESSURE_THRESHOLD;
+
+                if (shouldWarn !== this.isWarningActive) {
+                    this.isWarningActive = shouldWarn;
+                    this.updateWarningVisuals();
+                }
+
+                document.getElementById('wind-speed').textContent = `${currentData.windSpeed} m/s`;
+                document.getElementById('pressure').textContent = `${currentData.pressure} hPa`;
+
+                const windSpeedEl = document.getElementById('wind-speed');
+                const pressureEl = document.getElementById('pressure');
+                
+                if (currentData.windSpeed >= this.WIND_SPEED_THRESHOLD) {
+                    windSpeedEl.classList.add('danger');
+                } else {
+                    windSpeedEl.classList.remove('danger');
+                }
+
+                if (currentData.pressure <= this.PRESSURE_THRESHOLD) {
+                    pressureEl.classList.add('danger');
+                } else {
+                    pressureEl.classList.remove('danger');
+                }
+            }
+
+            updateWarningVisuals() {
+                const levelBadge = document.getElementById('level-badge');
+                
+                if (this.isWarningActive) {
+                    this.warningRings.forEach(ring => {
+                        ring.material.uniforms.active.value = 1.0;
+                    });
+                    levelBadge.className = 'level-badge level-danger';
+                    levelBadge.textContent = '危险预警';
+                } else {
+                    this.warningRings.forEach(ring => {
+                        ring.material.uniforms.active.value = 0.0;
+                    });
+                    const currentData = typhoonHistoryData[this.currentDataIndex];
+                    if (currentData.windSpeed >= 45) {
+                        levelBadge.className = 'level-badge level-warning';
+                        levelBadge.textContent = '强台风';
+                    } else {
+                        levelBadge.className = 'level-badge level-normal';
+                        levelBadge.textContent = '台风';
+                    }
+                }
+            }
+
+            highlightMarker(index) {
+                this.pathMarkers.forEach((marker, i) => {
+                    if (i === index) {
+                        marker.material.color.setHex(0x00ff00);
+                        marker.scale.set(1.5, 1.5, 1.5);
+                    } else {
+                        marker.material.color.setHex(0xff6600);
+                        marker.scale.set(1, 1, 1);
+                    }
+                });
+            }
+
+            highlightDataItem(index) {
+                document.querySelectorAll('.history-item').forEach((item, i) => {
+                    if (i === index) {
+                        item.classList.add('highlighted');
+                    } else {
+                        item.classList.remove('highlighted');
+                    }
+                });
+            }
+
+            handleMouseMove(event) {
+                const container = document.getElementById('canvas-container');
+                const rect = container.getBoundingClientRect();
+                
+                this.mouse.x = ((event.clientX - rect.left) / container.clientWidth) * 2 - 1;
+                this.mouse.y = -((event.clientY - rect.top) / container.clientHeight) * 2 + 1;
+
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const intersects = this.raycaster.intersectObjects(this.pathMarkers);
+
+                if (intersects.length > 0) {
+                    const index = intersects[0].object.userData.index;
+                    this.currentDataIndex = index;
+                    this.highlightMarker(index);
+                    this.highlightDataItem(index);
+                    this.checkWarningStatus();
+                    document.body.style.cursor = 'pointer';
+                } else {
+                    document.body.style.cursor = 'auto';
                 }
             }
 
             update() {
                 const time = Date.now() * this.animationSpeed;
                 this.typhoonParticles.rotation.y += this.animationSpeed * 0.5;
+
+                this.warningRings.forEach(ring => {
+                    ring.material.uniforms.time.value = time;
+                });
 
                 const typhoonPositions = this.typhoonParticles.geometry.attributes.position;
                 for (let i = 0; i < typhoonPositions.count; i++) {
@@ -1373,10 +1802,18 @@
             }
 
             setupEventListeners() {
+                const container = document.getElementById('canvas-container');
+
                 window.addEventListener('resize', () => {
-                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    const width = container.clientWidth;
+                    const height = container.clientHeight;
+                    this.camera.aspect = width / height;
                     this.camera.updateProjectionMatrix();
-                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                    this.renderer.setSize(width, height);
+                });
+
+                container.addEventListener('mousemove', (event) => {
+                    this.handleMouseMove(event);
                 });
 
                 window.addEventListener('keydown', (event) => {
